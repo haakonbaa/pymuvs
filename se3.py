@@ -70,6 +70,14 @@ class SE3():
         r._translation = self._translation.copy()
         return r
 
+    def get_rotation(self) -> MatrixBase:
+        """
+        Returns the rotation matrix of the SE(3) element.
+        """
+        return self._rotation
+
+    def free_symbols(self) -> set[sp.Symbol]:
+        return self._rotation.free_symbols.union(self._translation.free_symbols)
 
 def rot_x(theta: sp.Symbol) -> SE3:
     """
@@ -133,3 +141,159 @@ def inv(T: SE3) -> SE3:
     r._rotation = r._rotation.T
     r._translation = -r._rotation @ r._translation
     return r
+
+def rotmat_to_angular_velocity(R: MatrixBase,
+                               params: list[sp.Symbol],
+                               diff_params: list[sp.Symbol]) -> MatrixBase:
+    """
+    Given a rotation matrix R, compute the angular velocity vector w as a function
+    of the parameters and their time derivatives.
+
+    @param R: The rotation 3x3 matrix
+    @param params: A list of symbols representing the parameters. Note that all
+        parameters in R must be present in this list (but not necessarily vice versa)
+    @param diff_params: A list of symbols representing the time derivatives of
+        the parameters in the same order as in params.
+
+    Note: R is assumed to be a 3x3 rotation matrix, this is not checked!
+    """
+
+    # TODO: Fix!
+
+    assert R.shape == (3, 3)
+    assert len(params) == len(diff_params)
+    assert R.free_symbols.issubset(set(params))
+
+    q = sp.Matrix(params)
+    dq = sp.Matrix(diff_params)
+
+    R_diff = sp.Matrix.zeros(3, 3)
+    for i in range(3):
+        for j in range(3):
+            #print(R[i, j].diff(q).T @ dq)
+            #exit()
+            R_diff[i, j] = R[i, j].diff(q).T @ dq
+
+    S = R_diff @ R.T
+    # TODO: make sure S is skew-symmetric
+    w = sp.Matrix([S[2, 1], S[0, 2], S[1, 0]])
+    if _SIMPLIFY:
+        w = sp.simplify(w)
+    return w
+
+def down_skew(S: MatrixBase) -> MatrixBase:
+    """
+    Given a 3x3 skew-symetric matrix S, return the 3x1 vector such that
+    w x v = S @ v for any 3x1 vector v.
+
+    Assumes S is skew-symmetric, this is not checked!
+    """
+    assert S.shape == (3, 3)
+    return sp.Matrix([S[2, 1], S[0, 2], S[1, 0]])
+
+def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
+
+    assert R.shape == (3, 3)
+    assert R.free_symbols.issubset(set(params))
+
+    R = R.T # REMOVE
+
+    q = sp.Matrix(params)
+    dq = sp.Matrix(sp.symbols(f'dq0:{len(params)}'))
+
+    Rdot = sp.Matrix.zeros(3, 3)
+    for i in range(3):
+        for j in range(3):
+            Rdot[i, j] = R[i, j].diff(q).T @ dq
+    w = down_skew(Rdot @ R.T)
+    if _SIMPLIFY:
+        w = sp.simplify(w)
+
+    J = sp.zeros(3, len(params))
+    for c in range(len(params)):
+        subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
+        J[:, c] = w.subs(subs)
+
+    return -J  # J
+
+def rotmat_to_angvel_matrix_v2(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
+
+    assert R.shape == (3, 3)
+    assert R.free_symbols.issubset(set(params))
+
+    q = sp.Matrix(params)
+    dq = sp.Matrix(sp.symbols(f'dq0:{len(params)}'))
+
+    Rdot = sp.Matrix.zeros(3, 3)
+    for i in range(3):
+        for j in range(3):
+            Rdot[i, j] = R[i, j].diff(q).T @ dq
+    w = down_skew(Rdot @ R.T)
+    if _SIMPLIFY:
+        w = sp.simplify(w)
+
+    J = sp.zeros(3, len(params))
+    for c in range(len(params)):
+        subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
+        J[:, c] = w.subs(subs)
+
+    return J 
+   
+
+if __name__ == "__main__":
+    # run some tests
+    # Create a new element of SE(3)
+
+
+    r, p, y = sp.symbols('ϕ θ ψ')
+    dr, dp, dy = sp.symbols('dϕ dθ dψ')
+    T = rot_z(y) @ rot_y(p) @ rot_x(r)
+
+    # simple rotations
+    Rx = rot_x(r)
+    Sx = rotmat_to_angvel_matrix(Rx.get_rotation(), [r, p, y])
+    print(Sx)
+    print(Sx @ sp.Matrix([dr, dp, dy]))
+
+    Ry = rot_y(p)
+    Sy = rotmat_to_angvel_matrix(Ry.get_rotation(), [r, p, y])
+    print(Sy)
+    print(Sy @ sp.Matrix([dr, dp, dy]))
+
+    Rz = rot_z(y)
+    Sz = rotmat_to_angvel_matrix(Rz.get_rotation(), [r, p, y])
+    print(Sz)
+    print(Sz @ sp.Matrix([dr, dp, dy]))
+    #T = rot_x(r) @ rot_y(p) @ rot_z(y)
+    #T = rot_x(r)
+    #T = rot_y(p)
+    #T = rot_z(y)
+
+    R = T.get_rotation()
+    q = sp.Matrix([r, p, y])
+
+    S = rotmat_to_angvel_matrix_v2(R, [r, p, y])
+    w = S @ sp.Matrix([dr, dp, dy])
+    c1 = {r: 0, p: sp.pi/2, y: 0, dr: 1, dp: 0, dy: 0}
+
+    print(S)
+    print(w)
+
+    print(S.subs(c1))
+    print(w.subs(c1))
+
+    #w = rotmat_to_angular_velocity(R, [r, p, y], [dr, dp, dy])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
