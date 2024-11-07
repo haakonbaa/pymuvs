@@ -5,6 +5,7 @@ from numpy import ndarray as NDArray
 from typing_extensions import Self
 from typing import TypeVar
 
+
 _SIMPLIFY: bool = True
 
 
@@ -79,6 +80,7 @@ class SE3():
     def free_symbols(self) -> set[sp.Symbol]:
         return self._rotation.free_symbols.union(self._translation.free_symbols)
 
+
 def rot_x(theta: sp.Symbol) -> SE3:
     """
     Create an element of SE(3) that represents a rotation around the x-axis.
@@ -142,6 +144,7 @@ def inv(T: SE3) -> SE3:
     r._translation = -r._rotation @ r._translation
     return r
 
+
 def rotmat_to_angular_velocity(R: MatrixBase,
                                params: list[sp.Symbol],
                                diff_params: list[sp.Symbol]) -> MatrixBase:
@@ -171,7 +174,7 @@ def rotmat_to_angular_velocity(R: MatrixBase,
     for i in range(3):
         for j in range(3):
             #print(R[i, j].diff(q).T @ dq)
-            #exit()
+            # exit()
             R_diff[i, j] = R[i, j].diff(q).T @ dq
 
     S = R_diff @ R.T
@@ -180,6 +183,7 @@ def rotmat_to_angular_velocity(R: MatrixBase,
     if _SIMPLIFY:
         w = sp.simplify(w)
     return w
+
 
 def down_skew(S: MatrixBase) -> MatrixBase:
     """
@@ -191,32 +195,22 @@ def down_skew(S: MatrixBase) -> MatrixBase:
     assert S.shape == (3, 3)
     return sp.Matrix([S[2, 1], S[0, 2], S[1, 0]])
 
+
 def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
+    """
+    Given a 3x3 rotation matrix Rn^b(q), compute the  matrix J(q) such that
+        w^n = J(q) * dq
 
-    assert R.shape == (3, 3)
-    assert R.free_symbols.issubset(set(params))
+    w^n is the angular velocity of frame b relative to frame n, expressed in
+    frame n.
 
-    R = R.T # REMOVE
+    @param R: Rn^b(q) - the rotation matrix from frame n to frame b
+    @param params: A list of symbols representing the parameters of R. Note that
+        all parameters in R must be present in this list (but not necessarily
+        vice versa)
 
-    q = sp.Matrix(params)
-    dq = sp.Matrix(sp.symbols(f'dq0:{len(params)}'))
-
-    Rdot = sp.Matrix.zeros(3, 3)
-    for i in range(3):
-        for j in range(3):
-            Rdot[i, j] = R[i, j].diff(q).T @ dq
-    w = down_skew(Rdot @ R.T)
-    if _SIMPLIFY:
-        w = sp.simplify(w)
-
-    J = sp.zeros(3, len(params))
-    for c in range(len(params)):
-        subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
-        J[:, c] = w.subs(subs)
-
-    return -J  # J
-
-def rotmat_to_angvel_matrix_v2(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
+    @return The matrix J(q)
+    """
 
     assert R.shape == (3, 3)
     assert R.free_symbols.issubset(set(params))
@@ -232,19 +226,23 @@ def rotmat_to_angvel_matrix_v2(R: MatrixBase, params: list[sp.Symbol]) -> Matrix
     if _SIMPLIFY:
         w = sp.simplify(w)
 
+    # the w vector is a linear function of dq. Explot this to create a matrix
+    # representation in the standard basis.
+
     J = sp.zeros(3, len(params))
     for c in range(len(params)):
         subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
         J[:, c] = w.subs(subs)
 
-    return J 
-   
+    return J
+
 
 if __name__ == "__main__":
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     # run some tests
     # Create a new element of SE(3)
-
-
     r, p, y = sp.symbols('ϕ θ ψ')
     dr, dp, dy = sp.symbols('dϕ dθ dψ')
     T = rot_z(y) @ rot_y(p) @ rot_x(r)
@@ -252,8 +250,10 @@ if __name__ == "__main__":
     # simple rotations
     Rx = rot_x(r)
     Sx = rotmat_to_angvel_matrix(Rx.get_rotation(), [r, p, y])
-    print(Sx)
-    print(Sx @ sp.Matrix([dr, dp, dy]))
+    wx = Sx @ sp.Matrix([dr, dp, dy])
+    assert np.all(np.equal( Sx.evalf(), np.array([[1,0,0],[0,0,0],[0,0,0]]) ))
+    #assert np.all(sp.equal( (wx - sp.Matrix).evalf(), sp.Matrix.zeros(3,3)))
+    # TODO: Write more comprehensive tests
 
     Ry = rot_y(p)
     Sy = rotmat_to_angvel_matrix(Ry.get_rotation(), [r, p, y])
@@ -264,36 +264,32 @@ if __name__ == "__main__":
     Sz = rotmat_to_angvel_matrix(Rz.get_rotation(), [r, p, y])
     print(Sz)
     print(Sz @ sp.Matrix([dr, dp, dy]))
-    #T = rot_x(r) @ rot_y(p) @ rot_z(y)
-    #T = rot_x(r)
-    #T = rot_y(p)
-    #T = rot_z(y)
 
     R = T.get_rotation()
     q = sp.Matrix([r, p, y])
 
-    S = rotmat_to_angvel_matrix_v2(R, [r, p, y])
+    S = rotmat_to_angvel_matrix(R.T, [r, p, y])
     w = S @ sp.Matrix([dr, dp, dy])
-    c1 = {r: 0, p: sp.pi/2, y: 0, dr: 1, dp: 0, dy: 0}
+    def rand():
+        return 2*np.pi*np.random.random()
+    c1 = {r: rand(), p: rand(), y: rand(), dr: 1, dp: 0, dy: 0}
 
-    print(S)
-    print(w)
+    # 3D plot
+    fig, ax = plt.subplots()
+    ax = fig.add_subplot(111, projection='3d')
+    for t in np.linspace(0, 2*np.pi, 60):
+        subs = {r: c1[r] + t*c1[dr],
+                p: c1[p] + t*c1[dp],
+                y: c1[y] + t*c1[dy]}
+        point = R.subs(subs).evalf()
+        s = t / (2*np.pi)
+        ax.quiver(0, 0, 0, point[0,0], point[0,1], point[0,2], color=(1-s, 0, 0))
+        ax.quiver(0, 0, 0, point[1,0], point[1,1], point[1,2], color=(0, 1-s, 0))
+        ax.quiver(0, 0, 0, point[2,0], point[2,1], point[2,2], color=(0, 0, 1-s))
+        wpoint = w.subs(c1).evalf()
+        ax.quiver(0, 0, 0, wpoint[0], wpoint[1], wpoint[2], color='k')
 
-    print(S.subs(c1))
-    print(w.subs(c1))
-
-    #w = rotmat_to_angular_velocity(R, [r, p, y], [dr, dp, dy])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    ax.set_xlim([-1, 1])
+    ax.set_ylim([-1, 1])
+    ax.set_zlim([-1, 1])
+    plt.show()
