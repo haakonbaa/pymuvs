@@ -4,12 +4,18 @@ from sympy.matrices import MatrixBase
 from numpy import ndarray as NDArray
 from typing_extensions import Self
 from typing import TypeVar
+from deprecated import deprecated
 
 
 _SIMPLIFY: bool = True
 
 
 def set_simplify(simplify: bool):
+    """
+    Set global flag to disable/enable simplification of SE3 expressions.
+    Having it set to True will simplify the expressions, but may slow down
+    computation.
+    """
     global _SIMPLIFY
     _SIMPLIFY = simplify
 
@@ -76,6 +82,12 @@ class SE3():
         Returns the rotation matrix of the SE(3) element.
         """
         return self._rotation
+
+    def get_translation(self) -> MatrixBase:
+        """
+        Returns the translation vector of the SE(3) element.
+        """
+        return self._translation
 
     def free_symbols(self) -> set[sp.Symbol]:
         return self._rotation.free_symbols.union(self._translation.free_symbols)
@@ -145,6 +157,10 @@ def inv(T: SE3) -> SE3:
     return r
 
 
+""
+
+
+@deprecated
 def rotmat_to_angular_velocity(R: MatrixBase,
                                params: list[sp.Symbol],
                                diff_params: list[sp.Symbol]) -> MatrixBase:
@@ -221,10 +237,10 @@ def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBas
     Rdot = sp.Matrix.zeros(3, 3)
     for i in range(3):
         for j in range(3):
-            Rdot[i, j] = R[i, j].diff(q).T @ dq
+            Rdot[i, j] = sp.simplify(R[i, j].diff(q).T @ dq)
     w = down_skew(Rdot @ R.T)
-    if _SIMPLIFY:
-        w = sp.simplify(w)
+    # if _SIMPLIFY:
+    #    w = sp.simplify(w)
 
     # the w vector is a linear function of dq. Explot this to create a matrix
     # representation in the standard basis.
@@ -233,6 +249,9 @@ def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBas
     for c in range(len(params)):
         subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
         J[:, c] = w.subs(subs)
+
+    if _SIMPLIFY:
+        J = sp.simplify(J)
 
     return J
 
@@ -251,7 +270,8 @@ if __name__ == "__main__":
     Rx = rot_x(r)
     Sx = rotmat_to_angvel_matrix(Rx.get_rotation(), [r, p, y])
     wx = Sx @ sp.Matrix([dr, dp, dy])
-    assert np.all(np.equal( Sx.evalf(), np.array([[1,0,0],[0,0,0],[0,0,0]]) ))
+    assert np.all(np.equal(Sx.evalf(), np.array(
+        [[1, 0, 0], [0, 0, 0], [0, 0, 0]])))
     #assert np.all(sp.equal( (wx - sp.Matrix).evalf(), sp.Matrix.zeros(3,3)))
     # TODO: Write more comprehensive tests
 
@@ -270,6 +290,7 @@ if __name__ == "__main__":
 
     S = rotmat_to_angvel_matrix(R.T, [r, p, y])
     w = S @ sp.Matrix([dr, dp, dy])
+
     def rand():
         return 2*np.pi*np.random.random()
     c1 = {r: rand(), p: rand(), y: rand(), dr: 1, dp: 0, dy: 0}
@@ -283,9 +304,12 @@ if __name__ == "__main__":
                 y: c1[y] + t*c1[dy]}
         point = R.subs(subs).evalf()
         s = t / (2*np.pi)
-        ax.quiver(0, 0, 0, point[0,0], point[0,1], point[0,2], color=(1-s, 0, 0))
-        ax.quiver(0, 0, 0, point[1,0], point[1,1], point[1,2], color=(0, 1-s, 0))
-        ax.quiver(0, 0, 0, point[2,0], point[2,1], point[2,2], color=(0, 0, 1-s))
+        ax.quiver(0, 0, 0, point[0, 0], point[0, 1],
+                  point[0, 2], color=(1-s, 0, 0))
+        ax.quiver(0, 0, 0, point[1, 0], point[1, 1],
+                  point[1, 2], color=(0, 1-s, 0))
+        ax.quiver(0, 0, 0, point[2, 0], point[2, 1],
+                  point[2, 2], color=(0, 0, 1-s))
         wpoint = w.subs(c1).evalf()
         ax.quiver(0, 0, 0, wpoint[0], wpoint[1], wpoint[2], color='k')
 

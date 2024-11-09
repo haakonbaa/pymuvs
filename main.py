@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import numpy as np
 from sympy import Symbol
 import sympy as sp
@@ -16,7 +17,7 @@ def main():
     l2 = Link(1.0, 1.0, np.eye(3), np.eye(6), np.eye(6), np.eye(6))  # body
     l3 = Link(1.0, 1.0, np.eye(3), np.eye(6), np.eye(6), np.eye(6))
 
-    set_simplify(False) # Dont simplify SE3 expressions
+    set_simplify(True)  # Dont simplify SE3 expressions
 
     xn, yn, zn = sp.symbols('xn yn zn', real=True)
     phi, theta, psi = sp.symbols('phi theta psi', real=True)
@@ -26,9 +27,9 @@ def main():
     dphi, dtheta, dpsi = sp.symbols('dphi dtheta dpsi', real=True)
     da1, da2, da3, da4 = sp.symbols('da1 da2 da3 da4', real=True)
 
-
     a = SE3()
     Tl2n = trans(xn, yn, zn) @ rot_z(psi) @ rot_y(theta) @ rot_x(phi)
+    """
     Tl1l2 = trans(1, 0, 0) @ rot_y(a3) @ rot_z(a4) @ trans(1, 0, 0)
     Tl3l2 = inv(trans(1, 0, 0) @ rot_y(a1) @ rot_z(a2) @ trans(1, 0, 0))
 
@@ -40,10 +41,20 @@ def main():
                  params=[xn, yn, zn, phi, theta, psi, a1, a2, a3, a4],
                  diff_params=[dxn, dyn, dzn, dphi, dtheta, dpsi, da1, da2, da3, da4]
             )
+    """
+    t = Robot(links=[l1],
+              transforms=[Tl2n],
+              params=[xn, yn, zn, phi, theta, psi],
+              diff_params=[dxn, dyn, dzn, dphi, dtheta, dpsi],
+              )
 
-    model = eely.get_model()
+    print("started model computation")
+    model = t.get_model()
+    exit()
 
     print(model)
+
+    set_simplify(False)
 
     v = np.array([0, 0, 0])
     subs = {xn: 0, yn: 0, zn: 0, phi: 0, theta: 0,

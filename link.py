@@ -4,7 +4,7 @@ from sympy.matrices import MatrixBase
 from util import is_spd
 from numpy.typing import NDArray
 
-from se3 import SE3
+from se3 import SE3, rotmat_to_angvel_matrix
 
 
 """
@@ -107,22 +107,21 @@ class Robot():
 
         if transform_symbols != param_symbols:
             if transform_symbols.issubset(param_symbols):
-                raise ValueError("Extra parameters in the params list: " \
-                        f"{param_symbols - transform_symbols}. " \
-                        "These parameters were not found in the transforms.")
+                raise ValueError("Extra parameters in the params list: "
+                                 f"{param_symbols - transform_symbols}. "
+                                 "These parameters were not found in the transforms.")
             else:
-                raise ValueError("Missing paramaters in the params list: " \
-                        f"{transform_symbols - param_symbols}. " \
-                        "These parameters were not found in the transforms.")
+                raise ValueError("Missing paramaters in the params list: "
+                                 f"{transform_symbols - param_symbols}. "
+                                 "These parameters were not found in the transforms.")
 
         for diff_param in diff_params:
             if diff_param in param_symbols:
-                raise ValueError(f"Diff param {diff_param} found in params " \
+                raise ValueError(f"Diff param {diff_param} found in params "
                                  "list. These symbols should be unique!")
 
         self._links = links
         self._transforms = transforms
-        self._link_count: int = len(links)
         self._params = params
         self._diff_params = diff_params
         self._q = sp.Matrix(params)
@@ -135,6 +134,12 @@ class Robot():
         """
         return len(self._params)
 
+    def get_link_count(self) -> int:
+        """
+        Returns the number of links in the robot.
+        """
+        return len(self._links)
+
     def get_jacobian(self) -> MatrixBase:
         """
         Returns the Jacobian matrix of the robot.
@@ -142,11 +147,73 @@ class Robot():
         The Jacobian matrix, J(q), maps the generalized velocities dq to the linear
         and angular velocities of each link in the robot.
             v = J(q) * dq
-        J is a (6 * link_count) x dof matrix
+        J is a (6 * link_count) x (DOF) matrix
         """
 
-    def get_link_count(self) -> int:
-        return self._link_count
+        nl = self.get_link_count()
+        ndof = self.get_dof()
 
-    def get_model(slef):
-        pass
+        # Jacobian matrix
+        J = sp.zeros(6 * nl, ndof)
+        for link_num in range(nl):
+            Ji = sp.zeros(6, ndof)
+
+            p = self._transforms[link_num].get_translation()
+            R = self._transforms[link_num].get_rotation()
+
+            Ji[:3, :] = _jacobian(p, self._q)
+            Ji[3:, :] = rotmat_to_angvel_matrix(R.T, self._params)
+
+            J[6*link_num:6*(link_num+1), :] = Ji
+
+        return J
+
+    def get_model(self) -> None:
+        """
+        Returns the robot model as a Model object. The model object represents
+        a mathematical model on the form
+            M(q) * ddq + C(q, dq) + D(q, dq) + G(q) = tau
+        """
+
+        # Will formulate the enrgy as
+        # K = 0.5 * dq^T J(q)^T M(q) J(q) dq
+
+        # The potential enegy is compensated for by modelling graviy and buoyancy
+        # as forces acting on the links instead of potential energy.
+        # TODO: model forces acting on the links
+        J = self.get_jacobian()
+        print(J)
+
+
+def _jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
+    """
+    Compute the Jacobian of a nx1 vector x with respect to a list of
+    parameters q.
+    """
+
+    assert ((x.shape[0] == 1) or (x.shape[1] == 1))
+    assert q.shape[1] == 1
+
+    if x.shape[0] == 1:
+        return _jacobian(x.T, q).T
+
+    nx = x.shape[0]
+    nq = q.shape[0]
+
+    J = sp.zeros(nx, nq)
+    for i in range(nx):
+        J[i, :] = x[i].diff(q).T
+
+    return J
+
+
+def main():
+    x, y, z = sp.symbols('x y z')
+    m = sp.Matrix([[x+y**2 + x*z], [x*y*z]])
+    q = sp.Matrix([x, y, z])
+    J = _jacobian(m, q)
+    print(J, J.shape)
+
+
+if __name__ == "__main__":
+    main()
