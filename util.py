@@ -1,8 +1,13 @@
 import numpy as np
 from typing import Union
 from numpy.typing import NDArray
+from deprecated import deprecated
+
+import sympy as sp
+from sympy.matrices import MatrixBase
 
 UtilFloat = Union[float, np.float64]
+
 
 def is_symmetric(matrix: NDArray, atol: float = 1e-8) -> bool:
     """
@@ -24,12 +29,37 @@ def is_positive_definite(A: NDArray) -> bool:
 
     return is_positive_definite(A + A.T)
 
+
 def is_spd(A: NDArray) -> bool:
     """
     Check if a matrix A is symmetric positive definite.
     """
     return is_symmetric(A) and is_positive_definite(A)
 
+
+def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
+    """
+    Compute the Jacobian of a nx1 vector x with respect to a list of
+    parameters q.
+    """
+
+    assert ((x.shape[0] == 1) or (x.shape[1] == 1))
+    assert q.shape[1] == 1
+
+    if (x.shape[0] == 1) and (x.shape[1] != 1):
+        return _jacobian(x.T, q).T
+
+    nx = x.shape[0]
+    nq = q.shape[0]
+
+    J = sp.zeros(nx, nq)
+    for i in range(nx):
+        J[i, :] = x[i].diff(q).T
+
+    return J
+
+
+@deprecated
 def rot_x(angle: Union[float, np.float64]) -> NDArray:
     """
     Return the rotation matrix about the x-axis.
@@ -39,6 +69,7 @@ def rot_x(angle: Union[float, np.float64]) -> NDArray:
                      [0, np.sin(angle), np.cos(angle)]])
 
 
+@deprecated
 def rot_y(angle: Union[float, np.float64]) -> NDArray:
     """
     Return the rotation matrix about the y-axis.
@@ -47,6 +78,8 @@ def rot_y(angle: Union[float, np.float64]) -> NDArray:
                      [0, 1, 0],
                      [-np.sin(angle), 0, np.cos(angle)]])
 
+
+@deprecated
 def rot_z(angle: Union[float, np.float64]) -> NDArray:
     """
     Return the rotation matrix about the z-axis.
@@ -55,6 +88,8 @@ def rot_z(angle: Union[float, np.float64]) -> NDArray:
                      [np.sin(angle), np.cos(angle), 0],
                      [0, 0, 1]])
 
+
+@deprecated
 def is_rotation_matrix(matrix: NDArray, atol: float = 1e-8) -> bool:
     """
     Check if a matrix is a valid rotation matrix.

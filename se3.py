@@ -20,6 +20,8 @@ from typing_extensions import Self
 from typing import TypeVar
 from deprecated import deprecated
 
+from util import jacobian as _jacobian
+
 
 _SIMPLIFY: bool = True
 
@@ -102,6 +104,24 @@ class SE3():
         Returns the translation vector of the SE(3) element.
         """
         return self._translation
+
+    def get_jacobian(self, q: list[sp.Symbol]) -> MatrixBase:
+        """
+        Suppose the SE(3) elements transforms from frame b to some inertial
+        frame n.
+            v^i = T @ v^b
+        get_jacobian Returns the matrix mapping from the time derivatives of
+        the parameters of T to the twist in the body frame.
+            v^b = J(q) @ dq
+        """
+        assert self.free_symbols().issubset(set(q))
+        assert len(q) > 0
+        J = sp.zeros(6, len(q))
+        R = self._rotation
+        J[:3, :] = R.T @ _jacobian(self._translation, sp.Matrix(q))
+        J[3:, :] = rotmat_to_angvel_matrix_frameb(self._rotation, q)
+
+        return J
 
     def free_symbols(self) -> set[sp.Symbol]:
         return self._rotation.free_symbols.union(self._translation.free_symbols)

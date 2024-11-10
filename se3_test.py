@@ -51,6 +51,26 @@ class TestSE3(unittest.TestCase):
         R0 = R.subs({p: 0})
         self.assertTrue(R0 == sp.eye(3))
 
+    def test_get_jacobian(self):
+        xn, yn, zn = sp.symbols('xn yn zn', real=True)
+        phi, theta, psi = sp.symbols('ϕ θ ψ', real=True)
+        Tbn = trans(xn, yn, zn) @ rot_z(psi) @ rot_y(theta) @ rot_x(phi)
+
+        q = [xn, yn, zn, phi, theta, psi]
+        J = Tbn.get_jacobian(q)
+
+        # page 28 R^T Fossen (transposed) #TODO: Cite properly
+        # and page 29 T^-1
+        Je = sp.Matrix([[sp.cos(psi)*sp.cos(theta), sp.sin(psi)*sp.cos(theta), -sp.sin(theta), 0, 0, 0],
+                        [-sp.sin(psi)*sp.cos(phi)+sp.cos(psi)*sp.sin(theta)*sp.sin(phi), sp.cos(psi)*sp.cos(
+                            phi) + sp.sin(phi)*sp.sin(theta)*sp.sin(psi), sp.cos(theta)*sp.sin(phi), 0, 0, 0],
+                        [sp.sin(psi)*sp.sin(phi) + sp.cos(psi)*sp.cos(phi)*sp.sin(theta), -sp.cos(psi)*sp.sin(
+                            phi) + sp.sin(theta)*sp.sin(psi)*sp.cos(phi), sp.cos(theta)*sp.cos(phi), 0, 0, 0],
+                        [0, 0, 0, 1, 0, -sp.sin(theta)],
+                        [0, 0, 0, 0, sp.cos(phi), sp.sin(phi)*sp.cos(theta)],
+                        [0, 0, 0, 0, -sp.sin(phi), sp.cos(phi)*sp.cos(theta)]])
+        self.assertTrue(J == Je)
+
     def test_rot_z(self):
         y = sp.symbols('ψ')
         T = rot_z(y)

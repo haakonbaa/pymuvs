@@ -13,9 +13,12 @@ from matplotlib.widgets import Slider
 
 def main():
     # NED frame, link1 furthest north
-    l1 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))
-    l2 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))  # body
-    l3 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))
+    l1 = Link(1.0, 1.0, np.eye(3), np.zeros((6, 6)),
+              np.zeros((6, 6)), np.zeros((6, 6)))
+    l2 = Link(1.0, 1.0, np.eye(3), np.zeros((6, 6)),
+              np.zeros((6, 6)), np.zeros((6, 6)))  # body
+    l3 = Link(1.0, 1.0, np.eye(3), np.zeros((6, 6)),
+              np.zeros((6, 6)), np.zeros((6, 6)))
 
     set_simplify(True)  # Dont simplify SE3 expressions
 
@@ -55,6 +58,10 @@ def main():
 
     print("started model computation")
     model = t.get_model()
+    print(f"{model.M=}")
+    print(f"{model.C=}")
+    print(f"{model.D=}")
+    print(f"{model.g=}")
     exit()
 
     print(model)

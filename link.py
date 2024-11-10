@@ -4,14 +4,19 @@ from sympy.matrices import MatrixBase
 from util import is_spd, is_symmetric
 from numpy.typing import NDArray
 
+from deprecated import deprecated
+
 from se3 import SE3, rotmat_to_angvel_matrix_frameb
+from util import jacobian as _jacobian
+
 
 class Model():
     """
     A mathematical model of a robot on the form
         M(q) * ddq + C(q, dq) dq + D(q, dq) dq + g(q) = tau
     """
-    #TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
+    # TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
+
     def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase, g: MatrixBase):
         assert M.shape[0] == M.shape[1]
         n = M.shape[0]
@@ -147,6 +152,7 @@ class Robot():
         """
         return len(self._links)
 
+    @deprecated
     def get_jacobian(self) -> MatrixBase:
         """
         Returns the Jacobian matrix of the robot.
@@ -165,6 +171,7 @@ class Robot():
         for link_num in range(nl):
             Ji = sp.zeros(6, ndof)
 
+            # This is wrong. The p vector is given by
             p = self._transforms[link_num].get_translation()
             R = self._transforms[link_num].get_rotation()
 
@@ -175,7 +182,7 @@ class Robot():
 
         return J
 
-    def get_model(self, gvec : NDArray[np.float64] = np.array([0,0,-9.81])) -> None:
+    def get_model(self, gvec: NDArray[np.float64] = np.array([0, 0, -9.81])) -> None:
         """
         Returns the robot model as a Model object. The model object represents
         a mathematical model on the form
@@ -193,7 +200,11 @@ class Robot():
             assert gvec.size == 3
             gvec.reshape((3, 1))
 
-        J = self.get_jacobian()
+        # stack the jacobian matrices
+        J = sp.zeros(6 * self.get_link_count(), self.get_dof())
+        for t_num, T in enumerate(self._transforms):
+            mi = 6 * t_num
+            J[mi:mi+6, :] = T.get_jacobian(self._params)
 
         # Mass matrix
         M = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
@@ -219,7 +230,7 @@ class Robot():
         # Coreolis matrix
         C = sp.zeros(self.get_dof(), self.get_dof())
 
-        C += J.T * M * Jd + Jd.T * M * J # TODO: verify this is correct
+        C += J.T * M * Jd + Jd.T * M * J  # TODO: verify this is correct
 
         ugly = J.T * M * J * self._dq
         C += 0.5 * _jacobian(ugly, self._q).T
@@ -235,7 +246,8 @@ class Robot():
                 # TODO: adjust for center of mass
                 qi = sp.Matrix([self._params[i]])
                 _jacobian(pos, qi)
-                g[i] += _jacobian(pos, sp.Matrix([self._params[i]])).T @ gvec * link.mass
+                g[i] += _jacobian(pos, sp.Matrix([self._params[i]])
+                                  ).T @ gvec * link.mass
 
         g = - sp.simplify(g)
 
@@ -251,8 +263,7 @@ class Robot():
         return Model(Ma, C, sp.zeros(self.get_dof(), self.get_dof()), g)
 
 
-
-def _time_diff_matrix(A : MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
+def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
     """
     Compute the time derivative of a matrix A. A is a function of q, and the
     time derivatives of q are given by dq.
@@ -265,37 +276,3 @@ def _time_diff_matrix(A : MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -
             Ad[r, c] = A[r, c].diff(sp.Matrix(q)).T @ sp.Matrix(dq)
 
     return Ad
-
-
-def _jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
-    """
-    Compute the Jacobian of a nx1 vector x with respect to a list of
-    parameters q.
-    """
-
-    assert ((x.shape[0] == 1) or (x.shape[1] == 1))
-    assert q.shape[1] == 1
-
-    if (x.shape[0] == 1) and (x.shape[1] != 1):
-        return _jacobian(x.T, q).T
-
-    nx = x.shape[0]
-    nq = q.shape[0]
-
-    J = sp.zeros(nx, nq)
-    for i in range(nx):
-        J[i, :] = x[i].diff(q).T
-
-    return J
-
-
-def main():
-    x, y, z = sp.symbols('x y z')
-    m = sp.Matrix([[x+y**2 + x*z], [x*y*z]])
-    q = sp.Matrix([x, y, z])
-    J = _jacobian(m, q)
-    print(J, J.shape)
-
-
-if __name__ == "__main__":
-    main()
