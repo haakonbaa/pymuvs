@@ -13,9 +13,9 @@ from matplotlib.widgets import Slider
 
 def main():
     # NED frame, link1 furthest north
-    l1 = Link(1.0, 1.0, np.eye(3), np.eye(6), np.eye(6), np.eye(6))
-    l2 = Link(1.0, 1.0, np.eye(3), np.eye(6), np.eye(6), np.eye(6))  # body
-    l3 = Link(1.0, 1.0, np.eye(3), np.eye(6), np.eye(6), np.eye(6))
+    l1 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))
+    l2 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))  # body
+    l3 = Link(1.0, 1.0, np.eye(3), np.zeros((6,6)), np.zeros((6,6)), np.zeros((6,6)))
 
     set_simplify(True)  # Dont simplify SE3 expressions
 
@@ -41,7 +41,12 @@ def main():
                  params=[xn, yn, zn, phi, theta, psi, a1, a2, a3, a4],
                  diff_params=[dxn, dyn, dzn, dphi, dtheta, dpsi, da1, da2, da3, da4]
             )
+
+    model = eely.get_model()
+
+    exit()
     """
+
     t = Robot(links=[l1],
               transforms=[Tl2n],
               params=[xn, yn, zn, phi, theta, psi],

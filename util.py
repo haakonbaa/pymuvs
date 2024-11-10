@@ -17,7 +17,7 @@ def is_positive_definite(A: NDArray) -> bool:
     check if A + A.T is positive definite.
     """
     if is_symmetric(A):
-        return np.all(np.linalg.eigvals(A) > 0)
+        return bool(np.all(np.linalg.eigvals(A) > 0))
 
     if A.shape[0] != A.shape[1]:
         return False

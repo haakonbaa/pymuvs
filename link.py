@@ -1,25 +1,27 @@
 import numpy as np
 import sympy as sp
 from sympy.matrices import MatrixBase
-from util import is_spd
+from util import is_spd, is_symmetric
 from numpy.typing import NDArray
 
-from se3 import SE3, rotmat_to_angvel_matrix
+from se3 import SE3, rotmat_to_angvel_matrix_frameb
 
-
-"""
-class Position():
-    def __init__(self, x: np.float64, y: np.float64, z: np.float64):
-        self.x = np.float64(x)
-        self.y = np.float64(y)
-        self.z = np.float64(z)
-
-    def as_array(self) -> NDArray[np.float64]:
-        return np.array([self.x, self.y, self.z])
-
-    def __repr__(self):
-        return f"Position(x={self.x}, y={self.y}, z={self.z})"
-"""
+class Model():
+    """
+    A mathematical model of a robot on the form
+        M(q) * ddq + C(q, dq) dq + D(q, dq) dq + g(q) = tau
+    """
+    #TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
+    def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase, g: MatrixBase):
+        assert M.shape[0] == M.shape[1]
+        n = M.shape[0]
+        assert C.shape == (n, n)
+        assert D.shape == (n, n)
+        assert g.shape == (n, 1)
+        self.M = M
+        self.C = C
+        self.D = D
+        self.g = g
 
 
 class Link():
@@ -39,19 +41,21 @@ class Link():
                  ):
         assert type(inertia) == np.ndarray
         assert inertia.shape == (3, 3)
-        assert is_spd(inertia)
+        assert is_symmetric(inertia)
 
+        # TODO: Perform some checks on the added mass linear and quadratic
+        # damping
         assert type(added_mass) == np.ndarray
         assert added_mass.shape == (6, 6)
-        assert is_spd(added_mass)
+        assert is_symmetric(added_mass)
 
         assert type(linear_damping) == np.ndarray
         assert linear_damping.shape == (6, 6)
-        assert is_spd(linear_damping)
+        assert is_symmetric(linear_damping)
 
         assert type(quadratic_damping) == np.ndarray
         assert quadratic_damping.shape == (6, 6)
-        assert is_spd(quadratic_damping)
+        assert is_symmetric(quadratic_damping)
 
         self.mass = np.float64(mass)
         self.volume = np.float64(volume)
@@ -111,6 +115,9 @@ class Robot():
                                  f"{param_symbols - transform_symbols}. "
                                  "These parameters were not found in the transforms.")
             else:
+                # TODO: Might want to remove this check.
+                # People might want to have parameterized constants in the
+                # transforms.
                 raise ValueError("Missing paramaters in the params list: "
                                  f"{transform_symbols - param_symbols}. "
                                  "These parameters were not found in the transforms.")
@@ -162,27 +169,102 @@ class Robot():
             R = self._transforms[link_num].get_rotation()
 
             Ji[:3, :] = _jacobian(p, self._q)
-            Ji[3:, :] = rotmat_to_angvel_matrix(R.T, self._params)
+            Ji[3:, :] = rotmat_to_angvel_matrix_frameb(R, self._params)
 
             J[6*link_num:6*(link_num+1), :] = Ji
 
         return J
 
-    def get_model(self) -> None:
+    def get_model(self, gvec : NDArray[np.float64] = np.array([0,0,-9.81])) -> None:
         """
         Returns the robot model as a Model object. The model object represents
         a mathematical model on the form
-            M(q) * ddq + C(q, dq) + D(q, dq) + G(q) = tau
+            M(q) * ddq + C(q, dq) dq + D(q, dq) + G(q) = tau
         """
 
         # Will formulate the enrgy as
-        # K = 0.5 * dq^T J(q)^T M(q) J(q) dq
+        # K = 0.5 * dq^T J(q)^T M J(q) dq
 
         # The potential enegy is compensated for by modelling graviy and buoyancy
         # as forces acting on the links instead of potential energy.
         # TODO: model forces acting on the links
+
+        if isinstance(gvec, np.ndarray):
+            assert gvec.size == 3
+            gvec.reshape((3, 1))
+
         J = self.get_jacobian()
-        print(J)
+
+        # Mass matrix
+        M = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
+        for link_num in range(self.get_link_count()):
+            link = self._links[link_num]
+            mass = link.mass
+            inertia = link.inertia
+            added_mass = link.added_mass
+
+            # TODO: adjust inertia and added mass based on center of mass.
+            # for now assume the center of mass is at the origin.
+
+            mi = 6*link_num
+            M[mi:mi+3, mi:mi+3] = sp.eye(3) * mass
+            M[mi+3:mi+6, mi+3:mi+6] = inertia
+            M[mi:mi+6, mi:mi+6] += added_mass
+
+        Ma = sp.simplify(J.T * M * J)
+
+        # time derivative of Jacobian
+        Jd = _time_diff_matrix(J, self._params, self._diff_params)
+
+        # Coreolis matrix
+        C = sp.zeros(self.get_dof(), self.get_dof())
+
+        C += J.T * M * Jd + Jd.T * M * J # TODO: verify this is correct
+
+        ugly = J.T * M * J * self._dq
+        C += 0.5 * _jacobian(ugly, self._q).T
+        C = sp.simplify(C)
+
+        # gravity and buoyancy
+
+        g = sp.zeros(self.get_dof(), 1)
+        for link_num, link in enumerate(self._links):
+            Tbn = self._transforms[link_num]
+            pos = Tbn.get_translation()
+            for i in range(self.get_dof()):
+                # TODO: adjust for center of mass
+                qi = sp.Matrix([self._params[i]])
+                _jacobian(pos, qi)
+                g[i] += _jacobian(pos, sp.Matrix([self._params[i]])).T @ gvec * link.mass
+
+        g = - sp.simplify(g)
+
+        """
+        print(f"{g=}")
+        print(f"{M=}")
+        print(f"{J=}")
+        print(f"{Jd=}")
+        print(f"{Ma=}")
+        print(f"{C=}")
+        """
+
+        return Model(Ma, C, sp.zeros(self.get_dof(), self.get_dof()), g)
+
+
+
+def _time_diff_matrix(A : MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
+    """
+    Compute the time derivative of a matrix A. A is a function of q, and the
+    time derivatives of q are given by dq.
+    """
+    assert len(q) == len(dq)
+
+    Ad = sp.zeros(A.shape[0], A.shape[1])
+    for r in range(A.shape[0]):
+        for c in range(A.shape[1]):
+            Ad[r, c] = A[r, c].diff(sp.Matrix(q)).T @ sp.Matrix(dq)
+
+    return Ad
 
 
 def _jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
@@ -194,7 +276,7 @@ def _jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
     assert ((x.shape[0] == 1) or (x.shape[1] == 1))
     assert q.shape[1] == 1
 
-    if x.shape[0] == 1:
+    if (x.shape[0] == 1) and (x.shape[1] != 1):
         return _jacobian(x.T, q).T
 
     nx = x.shape[0]

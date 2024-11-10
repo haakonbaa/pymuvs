@@ -1,3 +1,17 @@
+"""
+An implementation of the special Euclidean group in 3D,SE(3). Designed to work
+with sympy for symbolic computations.
+
+References:
+
+[1] O. Egeland and J. T. Gravdahl, Modeling and simulation for automatic
+    control, Corr., 2. print. Trondheim: Marine Cybernetics AS, 2003. ISBN
+    82-92356-01-0
+
+[2] T. I. Fossen, Handbook of Marine Craft Hydrodynamics and Motion Control,
+    2nd Editioon, Wiley 2011. ISBN 9781119575054
+"""
+
 import sympy as sp
 import numpy as np
 from sympy.matrices import MatrixBase
@@ -157,9 +171,6 @@ def inv(T: SE3) -> SE3:
     return r
 
 
-""
-
-
 @deprecated
 def rotmat_to_angular_velocity(R: MatrixBase,
                                params: list[sp.Symbol],
@@ -201,6 +212,17 @@ def rotmat_to_angular_velocity(R: MatrixBase,
     return w
 
 
+def skew(v: MatrixBase) -> MatrixBase:
+    """
+    Given a 3x1 vector v, return the 3x3 skew-symmetric matrix S such that
+        w x v = S @ v for any 3x1 vector w.
+    """
+    assert v.shape == (3, 1)
+    return sp.Matrix([[0, -v[2], v[1]],
+                      [v[2], 0, -v[0]],
+                      [-v[1], v[0], 0]])
+
+
 def down_skew(S: MatrixBase) -> MatrixBase:
     """
     Given a 3x3 skew-symetric matrix S, return the 3x1 vector such that
@@ -212,6 +234,7 @@ def down_skew(S: MatrixBase) -> MatrixBase:
     return sp.Matrix([S[2, 1], S[0, 2], S[1, 0]])
 
 
+@deprecated
 def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
     """
     Given a 3x3 rotation matrix Rn^b(q), compute the  matrix J(q) such that
@@ -239,8 +262,51 @@ def rotmat_to_angvel_matrix(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBas
         for j in range(3):
             Rdot[i, j] = sp.simplify(R[i, j].diff(q).T @ dq)
     w = down_skew(Rdot @ R.T)
-    # if _SIMPLIFY:
-    #    w = sp.simplify(w)
+
+    # the w vector is a linear function of dq. Explot this to create a matrix
+    # representation in the standard basis.
+
+    J = sp.zeros(3, len(params))
+    for c in range(len(params)):
+        subs = {dq[i]: 1 if i == c else 0 for i in range(len(params))}
+        J[:, c] = w.subs(subs)
+
+    if _SIMPLIFY:
+        J = sp.simplify(J)
+
+    return J
+
+
+def rotmat_to_angvel_matrix_frameb(R: MatrixBase, params: list[sp.Symbol]) -> MatrixBase:
+    """
+    Given a 3x3 rotation matrix R_b^n(q), compute the matrix J(q) such that
+        w_{nb}^b = J(q) * dq
+
+    w_{nb}^b is the angular velocity vector of frame b relative to frame n
+    expressed in frame b.
+
+    See equation (6.255) in [1].
+
+    @param R: Rn^b(q) - the rotation matrix from frame n to frame b
+    @param params: A list of symbols representing the parameters of R. Note that
+        all parameters in R must be present in this list (but not necessarily
+        vice versa)
+
+    @return The matrix J(q)
+    """
+
+    assert R.shape == (3, 3)
+    assert R.free_symbols.issubset(set(params))
+
+    q = sp.Matrix(params)
+    dq = sp.Matrix(sp.symbols(f'dq0:{len(params)}'))
+
+    Rdot = sp.Matrix.zeros(3, 3)
+    for i in range(3):
+        for j in range(3):
+            Rdot[i, j] = sp.simplify(R[i, j].diff(q).T @ dq)
+
+    w = down_skew(R.T @ Rdot)
 
     # the w vector is a linear function of dq. Explot this to create a matrix
     # representation in the standard basis.
@@ -267,6 +333,10 @@ if __name__ == "__main__":
     T = rot_z(y) @ rot_y(p) @ rot_x(r)
 
     # simple rotations
+    J = rotmat_to_angvel_matrix_frameb(T.get_rotation(), [r, p, y])
+    print(J)
+    print(J.subs({r: 1, p: 0, y: 0}) @ np.array([0, 1, 0]))
+    exit()
     Rx = rot_x(r)
     Sx = rotmat_to_angvel_matrix(Rx.get_rotation(), [r, p, y])
     wx = Sx @ sp.Matrix([dr, dp, dy])
