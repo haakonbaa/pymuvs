@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Union
 from numpy.typing import NDArray
-from deprecated import deprecated
 
 import sympy as sp
 from sympy.matrices import MatrixBase
@@ -47,7 +46,7 @@ def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
     assert q.shape[1] == 1
 
     if (x.shape[0] == 1) and (x.shape[1] != 1):
-        return _jacobian(x.T, q).T
+        return jacobian(x.T, q).T
 
     nx = x.shape[0]
     nq = q.shape[0]
@@ -57,41 +56,3 @@ def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
         J[i, :] = x[i].diff(q).T
 
     return J
-
-
-@deprecated
-def rot_x(angle: Union[float, np.float64]) -> NDArray:
-    """
-    Return the rotation matrix about the x-axis.
-    """
-    return np.array([[1, 0, 0],
-                     [0, np.cos(angle), -np.sin(angle)],
-                     [0, np.sin(angle), np.cos(angle)]])
-
-
-@deprecated
-def rot_y(angle: Union[float, np.float64]) -> NDArray:
-    """
-    Return the rotation matrix about the y-axis.
-    """
-    return np.array([[np.cos(angle), 0, np.sin(angle)],
-                     [0, 1, 0],
-                     [-np.sin(angle), 0, np.cos(angle)]])
-
-
-@deprecated
-def rot_z(angle: Union[float, np.float64]) -> NDArray:
-    """
-    Return the rotation matrix about the z-axis.
-    """
-    return np.array([[np.cos(angle), -np.sin(angle), 0],
-                     [np.sin(angle), np.cos(angle), 0],
-                     [0, 0, 1]])
-
-
-@deprecated
-def is_rotation_matrix(matrix: NDArray, atol: float = 1e-8) -> bool:
-    """
-    Check if a matrix is a valid rotation matrix.
-    """
-    return np.allclose(np.linalg.det(matrix), 1, atol=atol) and np.allclose(matrix @ matrix.T, np.eye(3), atol=atol)

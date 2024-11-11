@@ -20,7 +20,7 @@ def main():
     l3 = Link(1.0, 1.0, np.eye(3), np.zeros((6, 6)),
               np.zeros((6, 6)), np.zeros((6, 6)))
 
-    set_simplify(True)  # Dont simplify SE3 expressions
+    set_simplify(True)
 
     xn, yn, zn = sp.symbols('xn yn zn', real=True)
     phi, theta, psi = sp.symbols('phi theta psi', real=True)
@@ -32,7 +32,6 @@ def main():
 
     a = SE3()
     Tl2n = trans(xn, yn, zn) @ rot_z(psi) @ rot_y(theta) @ rot_x(phi)
-    """
     Tl1l2 = trans(1, 0, 0) @ rot_y(a3) @ rot_z(a4) @ trans(1, 0, 0)
     Tl3l2 = inv(trans(1, 0, 0) @ rot_y(a1) @ rot_z(a2) @ trans(1, 0, 0))
 
@@ -42,12 +41,18 @@ def main():
     eely = Robot(links=[l1, l2, l3],
                  transforms=[Tl1n, Tl2n, Tl3n],
                  params=[xn, yn, zn, phi, theta, psi, a1, a2, a3, a4],
-                 diff_params=[dxn, dyn, dzn, dphi, dtheta, dpsi, da1, da2, da3, da4]
-            )
+                 diff_params=[dxn, dyn, dzn, dphi,
+                              dtheta, dpsi, da1, da2, da3, da4]
+                 )
 
-    model = eely.get_model()
+    model = eely.get_model(simplify=False)
+    print(f"{model.M=}")
+    print(f"{model.C=}")
+    print(f"{model.D=}")
+    print(f"{model.g=}")
 
     exit()
+    """
     """
 
     t = Robot(links=[l1],

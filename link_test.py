@@ -106,3 +106,39 @@ class TestSystem(unittest.TestCase):
         self.assertEqual(model.C, sp.Matrix([[0]]))
         self.assertEqual(model.D, sp.Matrix([[dy]]))
         self.assertEqual(model.g, sp.Matrix([[g*sp.sin(theta)]]))
+
+    def test_double_pendulum(self):
+        """
+        double pendulum with point mass at the end, length l, and angles θ1, θ2
+        masses m1, m2
+        """
+        l1 = 1
+        l2 = 1
+        m1 = 1
+        m2 = 1
+        g = 9.81
+
+        theta1, theta2, dtheta1, dtheta2, ddtheta1, ddtheta2 = sp.symbols(
+            'θ1 θ2 dθ1 dθ2 ddθ1 ddθ2')
+        Tl1n = rot_x(theta1) @ trans(0, 0, -l1)
+        Tl2n = Tl1n @ rot_x(-theta1) @ rot_x(theta2) @ trans(0, 0, -l2)
+
+        l1 = Link(m1, 0, np.zeros((3, 3)), np.zeros((6, 6)),
+                  np.zeros((6, 6)), np.zeros((6, 6)))
+        l2 = Link(m2, 0, np.zeros((3, 3)), np.zeros((6, 6)),
+                  np.zeros((6, 6)), np.zeros((6, 6)))
+        double_pendulum = Robot(links=[l1, l2],
+                                transforms=[Tl1n, Tl2n],
+                                params=[theta1, theta2],
+                                diff_params=[dtheta1, dtheta2])
+        model = double_pendulum.get_model(gvec=np.array([0, 0, -g]))
+
+        dq = sp.Matrix([[dtheta1], [dtheta2]])
+        ddq = sp.Matrix([[ddtheta1], [ddtheta2]])
+        m = model.M @ ddq + model.C @ dq + model.D @ dq + model.g
+        # TODO: verify that this is correct?
+        print(f"{model.M=}")
+        print(f"{model.C=}")
+        print(f"{model.D=}")
+        print(f"{model.g=}")
+        print(f"{model.J=}")

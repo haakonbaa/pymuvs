@@ -24,3 +24,7 @@ class TestLink(unittest.TestCase):
         m3 = sp.Matrix([[0], [sp.sin(x)], [-sp.cos(x)]])
         qi = sp.Matrix([x])
         dm3 = jacobian(m3, qi)
+
+        m4 = m3.T
+        dm4 = jacobian(m4, qi)
+        self.assertEqual(dm4, dm3.T)

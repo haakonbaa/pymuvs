@@ -4,9 +4,7 @@ from sympy.matrices import MatrixBase
 from util import is_spd, is_symmetric
 from numpy.typing import NDArray
 
-from deprecated import deprecated
-
-from se3 import SE3, rotmat_to_angvel_matrix_frameb, trans
+from se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
 from util import jacobian as _jacobian
 
 
@@ -17,16 +15,19 @@ class Model():
     """
     # TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
 
-    def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase, g: MatrixBase):
+    def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase,
+                 g: MatrixBase, J: MatrixBase):
         assert M.shape[0] == M.shape[1]
         n = M.shape[0]
         assert C.shape == (n, n)
         assert D.shape == (n, n)
         assert g.shape == (n, 1)
+        assert J.shape[1] == n
         self.M = M
         self.C = C
         self.D = D
         self.g = g
+        self.J = J
 
 
 class Link():
@@ -152,38 +153,9 @@ class Robot():
         """
         return len(self._links)
 
-    @deprecated
-    def get_jacobian(self) -> MatrixBase:
-        """
-        Returns the Jacobian matrix of the robot.
-
-        The Jacobian matrix, J(q), maps the generalized velocities dq to the linear
-        and angular velocities of each link in the robot.
-            v = J(q) * dq
-        J is a (6 * link_count) x (DOF) matrix
-        """
-
-        nl = self.get_link_count()
-        ndof = self.get_dof()
-
-        # Jacobian matrix
-        J = sp.zeros(6 * nl, ndof)
-        for link_num in range(nl):
-            Ji = sp.zeros(6, ndof)
-
-            # This is wrong. The p vector is given by
-            p = self._transforms[link_num].get_translation()
-            R = self._transforms[link_num].get_rotation()
-
-            Ji[:3, :] = _jacobian(p, self._q)
-            Ji[3:, :] = rotmat_to_angvel_matrix_frameb(R, self._params)
-
-            J[6*link_num:6*(link_num+1), :] = Ji
-
-        return J
-
     def get_model(self, gvec: NDArray[np.float64] = np.array([0, 0, -9.81]),
-                  bvec: NDArray[np.float64] = np.array([0, 0, 0])
+                  bvec: NDArray[np.float64] = np.array([0, 0, 0]),
+                  simplify: bool = True
                   ) -> None:
         """
         Returns the robot model as a Model object. The model object represents
@@ -211,6 +183,8 @@ class Robot():
         if isinstance(gvec, np.ndarray):
             assert gvec.size == 3
             gvec.reshape((3, 1))
+
+        # set_simplify(simplify)
 
         # stack the jacobian matrices
         J = sp.zeros(6 * self.get_link_count(), self.get_dof())
@@ -245,13 +219,21 @@ class Robot():
             # TODO: Verify that the calculation of the "quadratic" damping is
             # correct.
             Dquad_i = link.quadratic_damping
-            abs_twist = sp.simplify(sp.Abs(J[mi:mi+6, :] @ self._dq))
+            abs_twist = sp.Abs(J[mi:mi+6, :] @ self._dq)
+            if simplify:
+                abs_twist = sp.simplify(abs_twist)
             for i in range(6):
                 Dquad_i[i, :] = Dquad_i[i, :] * abs_twist[i]
             Dquad[mi:mi+6, mi:mi+6] = Dquad_i
 
-        Ma = sp.simplify(J.T * M * J)
-        D = sp.simplify(J.T * (Dlin + Dquad) * J)
+        Ma = J.T * M * J
+        if simplify:
+            Ma = sp.simplify(Ma)
+        # TODO: This implies the damping forces are applied to the center of
+        # mass, maybe applying them to the center of buoyancy is more correct?
+        D = J.T * (Dlin + Dquad) * J
+        if simplify:
+            D = sp.simplify(D)
 
         # time derivative of Jacobian
         Jd = _time_diff_matrix(J, self._params, self._diff_params)
@@ -263,7 +245,8 @@ class Robot():
 
         ugly = J.T * M * J * self._dq
         C += 0.5 * _jacobian(ugly, self._q).T
-        C = sp.simplify(C)
+        if simplify:
+            C = sp.simplify(C)
 
         # gravity and buoyancy
 
@@ -284,9 +267,13 @@ class Robot():
                 g[i] += _jacobian(pos_g, qi).T @ gvec * link.mass
                 g[i] += _jacobian(pos_b, qi).T @ bvec * link.volume
 
-        g = - sp.simplify(g)
+        g = - g
+        if simplify:
+            g = sp.simplify(g)
 
-        return Model(Ma, C, D, g)
+        # TODO: turn back simplify
+
+        return Model(Ma, C, D, g, J)
 
 
 def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:

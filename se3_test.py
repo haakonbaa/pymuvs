@@ -71,6 +71,22 @@ class TestSE3(unittest.TestCase):
                         [0, 0, 0, 0, -sp.sin(phi), sp.cos(phi)*sp.cos(theta)]])
         self.assertTrue(J == Je)
 
+    def test_get_jacobian_pendulum(self):
+        theta1, theta2 = sp.symbols('θ1 θ2', real=True)
+        dtheta1, dtheta2 = sp.symbols('dθ1 dθ2', real=True)
+
+        Tbn = rot_x(theta1) @ trans(0, 0, -1) @ rot_x(theta2) @ trans(0, 0, -1)
+        self.assertTrue(Tbn.apply(np.array([0, 0, 0])) == sp.Matrix([[0],
+                                                                     [sp.sin(
+                                                                         theta1)+sp.sin(theta1+theta2)],
+                                                                     [-(sp.cos(theta1)+sp.cos(theta1+theta2))]]))
+        J = sp.simplify(Tbn.get_jacobian([theta1, theta2]))
+        Jn = sp.simplify(Tbn.get_rotation() @ J[:3, :])
+        self.assertTrue(Jn == sp.Matrix([[0, 0],
+                                         [sp.cos(theta1) + sp.cos(theta1 +
+                                                                  theta2), sp.cos(theta1+theta2)],
+                                         [sp.sin(theta1) + sp.sin(theta1+theta2), sp.sin(theta1+theta2)]]))
+
     def test_rot_z(self):
         y = sp.symbols('ψ')
         T = rot_z(y)
