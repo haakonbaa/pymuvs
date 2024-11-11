@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 from deprecated import deprecated
 
-from se3 import SE3, rotmat_to_angvel_matrix_frameb
+from se3 import SE3, rotmat_to_angvel_matrix_frameb, trans
 from util import jacobian as _jacobian
 
 
@@ -182,7 +182,9 @@ class Robot():
 
         return J
 
-    def get_model(self, gvec: NDArray[np.float64] = np.array([0, 0, -9.81])) -> None:
+    def get_model(self, gvec: NDArray[np.float64] = np.array([0, 0, -9.81]),
+                  bvec: NDArray[np.float64] = np.array([0, 0, 0])
+                  ) -> None:
         """
         Returns the robot model as a Model object. The model object represents
         a mathematical model on the form
@@ -194,7 +196,11 @@ class Robot():
 
         # The potential enegy is compensated for by modelling graviy and buoyancy
         # as forces acting on the links instead of potential energy.
-        # TODO: model forces acting on the links
+        # TODO:
+        # - [ ] Add damping terms (linear and quadratic)
+        # - [ ] add buoyancy
+        # - [ ] movable center of mass and center of buoyancy
+        # - [ ] add possibility for external forces and torques
 
         if isinstance(gvec, np.ndarray):
             assert gvec.size == 3
@@ -203,8 +209,13 @@ class Robot():
         # stack the jacobian matrices
         J = sp.zeros(6 * self.get_link_count(), self.get_dof())
         for t_num, T in enumerate(self._transforms):
+            link = self._links[t_num]
             mi = 6 * t_num
-            J[mi:mi+6, :] = T.get_jacobian(self._params)
+            # Dont need to adjust inertia for center of mass as we adjust the
+            # jacobian instead. NB! Be careful not to use this jacobian for 
+            # other purposes, such as foce calculations.
+
+            J[mi:mi+6, :] = (T @ trans(*link.center_of_mass)).get_jacobian(self._params)
 
         # Mass matrix
         M = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
@@ -213,9 +224,6 @@ class Robot():
             mass = link.mass
             inertia = link.inertia
             added_mass = link.added_mass
-
-            # TODO: adjust inertia and added mass based on center of mass.
-            # for now assume the center of mass is at the origin.
 
             mi = 6*link_num
             M[mi:mi+3, mi:mi+3] = sp.eye(3) * mass
@@ -236,18 +244,23 @@ class Robot():
         C += 0.5 * _jacobian(ugly, self._q).T
         C = sp.simplify(C)
 
-        # gravity and buoyancy
+        # gravity
 
         g = sp.zeros(self.get_dof(), 1)
         for link_num, link in enumerate(self._links):
-            Tbn = self._transforms[link_num]
-            pos = Tbn.get_translation()
+            Tbn_g = self._transforms[link_num] @ trans(*link.center_of_mass)
+            pos_g = Tbn_g.get_translation()
+
+            #buoyancy
+            Tbn_b = self._transforms[link_num] @ trans(*link.center_of_buoyancy)
+            pos_b = Tbn_b.get_translation()
+
             for i in range(self.get_dof()):
-                # TODO: adjust for center of mass
+                # TODO: I think this can be written more elegantly with a 
+                # jacobian.
                 qi = sp.Matrix([self._params[i]])
-                _jacobian(pos, qi)
-                g[i] += _jacobian(pos, sp.Matrix([self._params[i]])
-                                  ).T @ gvec * link.mass
+                g[i] += _jacobian(pos_g, qi).T @ gvec * link.mass
+                g[i] += _jacobian(pos_b, qi).T @ bvec * link.volume
 
         g = - sp.simplify(g)
 

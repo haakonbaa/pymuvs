@@ -39,8 +39,8 @@ class TestSystem(unittest.TestCase):
 
         theta, dtheta = sp.symbols('θ dθ')
         Tbn = rot_x(theta) @ trans(0, 0, -l)
-        mass = Link(m, 0, np.zeros((3, 3)), np.zeros(
-            (6, 6)), np.zeros((6, 6)), np.zeros((6, 6)))
+        mass = Link(m, 0, np.zeros((3, 3)), np.zeros((6, 6)),
+                    np.zeros((6, 6)), np.zeros((6, 6)))
 
         pendulum = Robot(links=[mass],
                          transforms=[Tbn],
@@ -52,3 +52,29 @@ class TestSystem(unittest.TestCase):
         self.assertEqual(model.C, sp.Matrix([[0]]))
         self.assertEqual(model.D, sp.Matrix([[0]]))
         self.assertEqual(model.g, sp.Matrix([[g*sp.sin(theta)]]))
+
+    def test_pendulum_com(self):
+        """
+        simple pendulum with point mass at the end, length l, and angle θ
+        mass m. Center of mass adjusted by -l in z direction
+        """
+        l = 1
+        m = 1
+        g = 9.81
+
+        theta, dtheta = sp.symbols('θ dθ')
+        Tbn = rot_x(theta) @ trans(0, 0, -l)
+        mass = Link(m, 0, np.zeros((3, 3)),
+                    np.zeros((6, 6)), np.zeros((6, 6)), np.zeros((6, 6)),
+                    center_of_mass=np.array([0, 0, -l]))
+
+        pendulum = Robot(links=[mass],
+                         transforms=[Tbn],
+                         params=[theta],
+                         diff_params=[dtheta])
+
+        model = pendulum.get_model(gvec=np.array([0, 0, -g]))
+        self.assertEqual(model.M, sp.Matrix([[4]])) # NB! 4 instead of 1 
+        self.assertEqual(model.C, sp.Matrix([[0]]))
+        self.assertEqual(model.D, sp.Matrix([[0]]))
+        self.assertEqual(model.g, sp.Matrix([[2*g*sp.sin(theta)]])) # NB! 2
