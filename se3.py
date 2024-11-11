@@ -328,8 +328,9 @@ def rotmat_to_angvel_matrix_frameb(R: MatrixBase, params: list[sp.Symbol]) -> Ma
 
     w = down_skew(R.T @ Rdot)
 
-    # the w vector is a linear function of dq. Explot this to create a matrix
-    # representation in the standard basis.
+    # TODO: Assuming the w vector is a linear function of dq. Verify that this
+    # is correct. Explot this to create a matrix representation in the standard
+    # basis.
 
     J = sp.zeros(3, len(params))
     for c in range(len(params)):

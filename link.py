@@ -188,7 +188,16 @@ class Robot():
         """
         Returns the robot model as a Model object. The model object represents
         a mathematical model on the form
-            M(q) * ddq + C(q, dq) dq + D(q, dq) + G(q) = tau
+            M(q) ddq + C(q, dq) dq + D(q, dq) dq + g(q) = tau
+
+        @param gvec: The gravity vector acting on the robot. Normal value is
+            [0, 0, -9.81] m/s^2. This vector is multiplied by the mass to get
+            the gravitational force acting on each link.
+        @param bvec: The buoyancy vector acting on the robot. This vector is
+            multiplied by the volume of each link to get the buoyancy force
+            acting on each link. Normal value is
+            [0, 0, 1025 kg/m^3 * 9.81 m/s^2] N/m^3 when volume is given in m^3.
+            [0, 0, 1.025 kg/L * 9.81 m/s^2] N/m^3 when volume is given in L.
         """
 
         # Will formulate the enrgy as
@@ -197,9 +206,6 @@ class Robot():
         # The potential enegy is compensated for by modelling graviy and buoyancy
         # as forces acting on the links instead of potential energy.
         # TODO:
-        # - [ ] Add damping terms (linear and quadratic)
-        # - [ ] add buoyancy
-        # - [ ] movable center of mass and center of buoyancy
         # - [ ] add possibility for external forces and torques
 
         if isinstance(gvec, np.ndarray):
@@ -212,13 +218,16 @@ class Robot():
             link = self._links[t_num]
             mi = 6 * t_num
             # Dont need to adjust inertia for center of mass as we adjust the
-            # jacobian instead. NB! Be careful not to use this jacobian for 
-            # other purposes, such as foce calculations.
+            # jacobian instead. NB! Be careful not to use this jacobian for
+            # other purposes, such as force calculations.
+            J[mi:mi+6, :] = (T @ trans(*link.center_of_mass)
+                             ).get_jacobian(self._params)
 
-            J[mi:mi+6, :] = (T @ trans(*link.center_of_mass)).get_jacobian(self._params)
-
-        # Mass matrix
+        # Mass and damping matrix
         M = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
+        Dlin = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
+        Dquad = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
+
         for link_num in range(self.get_link_count()):
             link = self._links[link_num]
             mass = link.mass
@@ -230,7 +239,19 @@ class Robot():
             M[mi+3:mi+6, mi+3:mi+6] = inertia
             M[mi:mi+6, mi:mi+6] += added_mass
 
+            Dlin[mi:mi+6, mi:mi+6] = link.linear_damping
+            #Dquad[mi:mi+6, mi:mi+6] = link.quadratic_damping
+
+            # TODO: Verify that the calculation of the "quadratic" damping is
+            # correct.
+            Dquad_i = link.quadratic_damping
+            abs_twist = sp.simplify(sp.Abs(J[mi:mi+6, :] @ self._dq))
+            for i in range(6):
+                Dquad_i[i, :] = Dquad_i[i, :] * abs_twist[i]
+            Dquad[mi:mi+6, mi:mi+6] = Dquad_i
+
         Ma = sp.simplify(J.T * M * J)
+        D = sp.simplify(J.T * (Dlin + Dquad) * J)
 
         # time derivative of Jacobian
         Jd = _time_diff_matrix(J, self._params, self._diff_params)
@@ -244,19 +265,20 @@ class Robot():
         C += 0.5 * _jacobian(ugly, self._q).T
         C = sp.simplify(C)
 
-        # gravity
+        # gravity and buoyancy
 
         g = sp.zeros(self.get_dof(), 1)
         for link_num, link in enumerate(self._links):
             Tbn_g = self._transforms[link_num] @ trans(*link.center_of_mass)
             pos_g = Tbn_g.get_translation()
 
-            #buoyancy
-            Tbn_b = self._transforms[link_num] @ trans(*link.center_of_buoyancy)
+            # buoyancy force
+            Tbn_b = self._transforms[link_num] @ trans(
+                *link.center_of_buoyancy)
             pos_b = Tbn_b.get_translation()
 
             for i in range(self.get_dof()):
-                # TODO: I think this can be written more elegantly with a 
+                # TODO: I think this can be written more elegantly with a
                 # jacobian.
                 qi = sp.Matrix([self._params[i]])
                 g[i] += _jacobian(pos_g, qi).T @ gvec * link.mass
@@ -264,16 +286,7 @@ class Robot():
 
         g = - sp.simplify(g)
 
-        """
-        print(f"{g=}")
-        print(f"{M=}")
-        print(f"{J=}")
-        print(f"{Jd=}")
-        print(f"{Ma=}")
-        print(f"{C=}")
-        """
-
-        return Model(Ma, C, sp.zeros(self.get_dof(), self.get_dof()), g)
+        return Model(Ma, C, D, g)
 
 
 def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
