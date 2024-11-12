@@ -2,9 +2,10 @@ import unittest
 import sympy as sp
 import numpy as np
 
-from util import jacobian
-from se3 import rot_x, trans
-from link import Link, Model, _time_diff_matrix, Robot
+from src.pymuvs.util import jacobian
+from src.pymuvs.se3 import rot_x, trans
+from src.pymuvs import Link, Model, Robot
+from src.pymuvs.link import _time_diff_matrix
 
 
 class TestLink(unittest.TestCase):

@@ -1,7 +1,8 @@
 import sympy as sp
+import numpy as np
 import unittest
 
-from se3 import *
+from src.pymuvs.se3 import *
 
 
 class TestSE3(unittest.TestCase):

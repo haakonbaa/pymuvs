@@ -2,7 +2,7 @@ import unittest
 import sympy as sp
 import numpy as np
 
-from util import jacobian
+from src.pymuvs.util import jacobian
 
 
 class TestLink(unittest.TestCase):
