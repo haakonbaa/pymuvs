@@ -5,9 +5,6 @@ from numpy.typing import NDArray
 import sympy as sp
 from sympy.matrices import MatrixBase
 
-UtilFloat = Union[float, np.float64]
-
-
 def is_symmetric(matrix: NDArray, atol: float = 1e-8) -> bool:
     """
     Check if a matrix is symmetric within a given tolerance.

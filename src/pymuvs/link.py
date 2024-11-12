@@ -1,11 +1,10 @@
 import numpy as np
 import sympy as sp
 from sympy.matrices import MatrixBase
-from util import is_spd, is_symmetric
 from numpy.typing import NDArray
 
-from se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
-from util import jacobian as _jacobian
+from .se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
+from .util import jacobian as _jacobian, is_symmetric, is_spd
 
 
 class Model():

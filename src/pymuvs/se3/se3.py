@@ -20,7 +20,7 @@ from typing_extensions import Self
 from typing import TypeVar
 from deprecated import deprecated
 
-from util import jacobian as _jacobian
+from ..util import jacobian as _jacobian
 
 
 _SIMPLIFY: bool = True
