@@ -36,6 +36,10 @@ def set_simplify(simplify: bool):
     _SIMPLIFY = simplify
 
 
+def _simplify(expression: MatrixBase) -> MatrixBase:
+    return sp.trigsimp(expression)
+
+
 class SE3():
     """
     Represents an element of SE(3) - the special Euclidean group in 3D.
@@ -63,8 +67,8 @@ class SE3():
         res._rotation = self._rotation @ other._rotation
         res._translation = self._rotation @ other._translation + self._translation
         if _SIMPLIFY:
-            res._rotation = sp.simplify(res._rotation)
-            res._translation = sp.simplify(res._translation)
+            res._rotation = _simplify(res._rotation)
+            res._translation = _simplify(res._translation)
         return res
 
     def apply(self, point: MatrixBase | NDArray) -> MatrixBase:
@@ -81,7 +85,7 @@ class SE3():
         point = sp.Matrix(point)
         expression: MatrixBase = self._rotation @ point + self._translation
         if _SIMPLIFY:
-            return sp.simplify(expression)
+            return _simplify(expression)
         return expression
 
     def copy(self) -> 'SE3':
@@ -119,7 +123,7 @@ class SE3():
         J = sp.zeros(6, len(q))
         R = self._rotation
         # TODO: make it possible to disable simplification
-        J[:3, :] = sp.simplify(
+        J[:3, :] = _simplify(
             R.T @ _jacobian(self._translation, sp.Matrix(q)))
         J[3:, :] = rotmat_to_angvel_matrix_frameb(self._rotation, q)
 
@@ -256,6 +260,6 @@ def rotmat_to_angvel_matrix_frameb(R: MatrixBase, params: list[sp.Symbol]) -> Ma
         J[:, c] = w.subs(subs)
 
     if _SIMPLIFY:
-        J = sp.simplify(J)
+        J = _simplify(J)
 
     return J

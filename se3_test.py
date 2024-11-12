@@ -138,5 +138,18 @@ class TestSE3(unittest.TestCase):
                                [0, sp.cos(r), sp.sin(r)*sp.cos(p)],
                                [0, -sp.sin(r), sp.cos(r)*sp.cos(p)]])
 
+        print(f"{J=}")
+        print(f"{ExpectedR=}")
         self.assertTrue(J == ExpectedR)
         self.assertTrue(J.subs({r: 0, p: 0, y: 0}) == sp.eye(3))
+
+    def test_speed(self):
+        set_simplify(False)
+        r, p, y = sp.symbols('ϕ θ ψ')
+        x, y, z = sp.symbols('x y z')
+        dr, dp, dy = sp.symbols('dϕ dθ dψ')
+        T = trans(x, y, z) @ rot_z(y) @ rot_z(-y) @ rot_y(p) @ rot_x(r)
+        set_simplify(True)
+        R = T.get_rotation()
+        print(f"{R=}")
+        print(f"{sp.trigsimp(R)=}")
