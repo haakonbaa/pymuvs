@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymuvs"
+version = "0.0.1"
+authors = [
+  { name="Håkon Bårsaune", email="haakonbaa@gmail.com" },
+]
+description = "PyMUVs models Underwater Vehicle's"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/haakonbaa/pymuvs"
+Issues = "https://github.com/haakonbaa/pymuvs/issues"

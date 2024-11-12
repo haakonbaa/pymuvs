@@ -1,0 +1,4 @@
+Deprecated==1.2.13
+numpy==1.21.5
+sympy==1.10.1
+typing_extensions==4.12.2

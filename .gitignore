@@ -1,0 +1,10 @@
+# parts taken from https://github.com/github/gitignore/blob/main/Python.gitignore
+# licensed under Create Commons (CC0 1.0 Universal)
+
+# python files
+__pycache__/
+*.pyc
+
+*.egg-info
+*.egg
+
