@@ -118,7 +118,8 @@ class SE3():
         the parameters of T to the twist in the body frame.
             v^b = J(q) @ dq
         """
-        assert self.free_symbols().issubset(set(q))
+        # TODO: can pass dynamic symbols to this function
+        #assert self.free_symbols().issubset(set(q))
         assert len(q) > 0
         J = sp.zeros(6, len(q))
         R = self._rotation
@@ -238,7 +239,8 @@ def rotmat_to_angvel_matrix_frameb(R: MatrixBase, params: list[sp.Symbol]) -> Ma
     """
 
     assert R.shape == (3, 3)
-    assert R.free_symbols.issubset(set(params))
+    # TODO: can pass dynamic symbols to this function
+    #assert R.free_symbols.issubset(set(params))
 
     q = sp.Matrix(params)
     dq = sp.Matrix(sp.symbols(f'dq0:{len(params)}'))

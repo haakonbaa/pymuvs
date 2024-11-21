@@ -4,5 +4,6 @@ __license__ = 'MIT'
 __description__ = 'A package for generating mathematical models of underwater vehicles'
 
 from .link import Link, Robot, Model
+from .robot import RobotV2
 
-__all__ = ['Link', 'Robot', 'Model']
+__all__ = ['Link', 'Robot', 'Model', 'RobotV2']

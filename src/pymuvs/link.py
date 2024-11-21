@@ -15,7 +15,10 @@ class Model():
     # TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
 
     def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase,
-                 g: MatrixBase, J: MatrixBase):
+                 g: MatrixBase, J: MatrixBase,
+                 transforms: list[SE3],
+                 params: list[sp.Symbol],
+                 diff_params: list[sp.Symbol]):
         assert M.shape[0] == M.shape[1]
         n = M.shape[0]
         assert C.shape == (n, n)
@@ -27,6 +30,34 @@ class Model():
         self.D = D
         self.g = g
         self.J = J
+        self.transforms = transforms
+        self.params = params
+        self.diff_params = diff_params
+
+    def eval(self, q, dq):
+        """
+        returns ddq = M^-1 * (tau - C(q, dq) dq - D(q, dq) dq - g(q))
+        """
+        assert len(q) == len(self.params)
+        assert len(dq) == len(self.diff_params)
+        assert isinstance(q, np.ndarray)
+        assert isinstance(dq, np.ndarray)
+        
+
+        q = q.reshape((-1, 1))
+        dq = dq.reshape((-1, 1))
+
+        subs_q = {self.params[i]: float(q[i]) for i in range(len(q))}
+        subs_dq = {self.diff_params[i]: float(dq[i]) for i in range(len(dq))}
+
+        M = np.array(self.M.subs(subs_q), dtype=np.float64)
+        M_inv = np.linalg.inv(M)
+        C = np.array(self.C.subs(subs_q).subs(subs_dq), dtype=np.float64)
+        D = np.array(self.D.subs(subs_q).subs(subs_dq), dtype=np.float64)
+        g = np.array(self.g.subs(subs_q), dtype=np.float64)
+
+        # TODO: add tau
+        return (M_inv @ ( - C @ dq - D @ dq - g)).flatten()
 
 
 class Link():
@@ -78,6 +109,27 @@ class Link():
             f"added_mass={self.added_mass})\n" \
             f"linear_damping={self.linear_damping})\n" \
             f"quadratic_damping={self.quadratic_damping})"
+    
+    def get_mass_matrix(self) -> NDArray[np.float64]:
+        """
+        Returns the mass matrix of the link.
+        """
+        M = np.zeros((6, 6))
+        M[0:3, 0:3] = np.eye(3) * self.mass
+        M[3:6, 3:6] = self.inertia
+        M += self.added_mass
+        # Using Fossen eq 3.27 page 60 we shift the spatial inertia matrix
+        # to be about the link's coordinate system, not center of mass.
+        # TODO: Verify that this is correct.
+        v = self.center_of_mass
+        S = np.array([[0,-v[2],v[1]],
+                      [v[2],0,-v[0]],
+                      [-v[1],v[0],0]])
+        I = np.eye(3)
+        H = np.block([[I, S.T],
+                      [np.zeros((3,3)), I]])
+
+        return H.T @ M @ H
 
 
 class Robot():
@@ -183,37 +235,35 @@ class Robot():
             assert gvec.size == 3
             gvec.reshape((3, 1))
 
-        # set_simplify(simplify)
-
         # stack the jacobian matrices
+        print('jacobian')
         J = sp.zeros(6 * self.get_link_count(), self.get_dof())
         for t_num, T in enumerate(self._transforms):
+            print(f'Jacobian for link {t_num}:')
             link = self._links[t_num]
             mi = 6 * t_num
-            # Dont need to adjust inertia for center of mass as we adjust the
-            # jacobian instead. NB! Be careful not to use this jacobian for
-            # other purposes, such as force calculations.
-            J[mi:mi+6, :] = (T @ trans(*link.center_of_mass)
-                             ).get_jacobian(self._params)
+            J[mi:mi+6, :] = T.get_jacobian(self._params)
 
         # Mass and damping matrix
+        print('mass matrix')
         M = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
         Dlin = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
         Dquad = sp.zeros(6*self.get_link_count(), 6*self.get_link_count())
 
         for link_num in range(self.get_link_count()):
             link = self._links[link_num]
-            mass = link.mass
-            inertia = link.inertia
-            added_mass = link.added_mass
-
             mi = 6*link_num
-            M[mi:mi+3, mi:mi+3] = sp.eye(3) * mass
-            M[mi+3:mi+6, mi+3:mi+6] = inertia
-            M[mi:mi+6, mi:mi+6] += added_mass
+            M[mi:mi+6, mi:mi+6] = link.get_mass_matrix()
+            #mass = link.mass
+            #inertia = link.inertia
+            #added_mass = link.added_mass
+
+            #M[mi:mi+3, mi:mi+3] = sp.eye(3) * mass
+            #M[mi+3:mi+6, mi+3:mi+6] = inertia
+            #M[mi:mi+6, mi:mi+6] += added_mass
 
             Dlin[mi:mi+6, mi:mi+6] = link.linear_damping
-            #Dquad[mi:mi+6, mi:mi+6] = link.quadratic_damping
+            Dquad[mi:mi+6, mi:mi+6] = link.quadratic_damping
 
             # TODO: Verify that the calculation of the "quadratic" damping is
             # correct.
@@ -235,20 +285,22 @@ class Robot():
             D = sp.simplify(D)
 
         # time derivative of Jacobian
+        print('time derivative of Jacobian')
         Jd = _time_diff_matrix(J, self._params, self._diff_params)
 
         # Coreolis matrix
+        print('Coreolis matrix')
         C = sp.zeros(self.get_dof(), self.get_dof())
-
         C += J.T * M * Jd + Jd.T * M * J  # TODO: verify this is correct
 
         ugly = J.T * M * J * self._dq
-        C += 0.5 * _jacobian(ugly, self._q).T
+        C -= 0.5 * _jacobian(ugly, self._q).T
         if simplify:
             C = sp.simplify(C)
 
         # gravity and buoyancy
 
+        print('gravity and buoyancy')
         g = sp.zeros(self.get_dof(), 1)
         for link_num, link in enumerate(self._links):
             Tbn_g = self._transforms[link_num] @ trans(*link.center_of_mass)
@@ -272,7 +324,7 @@ class Robot():
 
         # TODO: turn back simplify
 
-        return Model(Ma, C, D, g, J)
+        return Model(Ma, C, D, g, J, self._transforms, self._params, self._diff_params)
 
 
 def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
