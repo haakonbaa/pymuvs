@@ -13,12 +13,13 @@ def vector_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
     while identifier in variables or identifier == name:
         identifier += str(np.random.randint(0, 9))
 
-    code = f"Eigen::VectorXd {name}("
-    code += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
-    code += ") {\n"
+    declaration = f"Eigen::VectorXd {name}("
+    declaration += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+    declaration += ")"
+    code = declaration + " {\n"
     for vname, vlist in kwargs.items():
         for i, v in enumerate(vlist):
-            code += f"{indent}auto {v} = {vname}({i});\n"
+            code += f"{indent}double {v} = {vname}({i});\n"
     code += f"{indent}Eigen::VectorXd {identifier}({m.rows}, {m.cols});\n"
     rows, cols = m.shape
     for r in range(rows):
@@ -26,7 +27,7 @@ def vector_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
         code += f"{indent}{identifier}({r}) = {expr};\n"
     code += f"{indent}return {identifier};\n" + "}"
 
-    return code
+    return code, declaration
 
 
 def matrix_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
@@ -38,12 +39,13 @@ def matrix_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
     while identifier in variables or identifier == name:
         identifier += str(np.random.randint(0, 9))
 
-    code = f"Eigen::MatrixXd {name}("
-    code += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
-    code += ") {\n"
+    declaration = f"Eigen::MatrixXd {name}("
+    declaration += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+    declaration += ")"
+    code = declaration + " {\n"
     for vname, vlist in kwargs.items():
         for i, v in enumerate(vlist):
-            code += f"{indent}auto {v} = {vname}({i});\n"
+            code += f"{indent}double {v} = {vname}({i});\n"
     code += f"{indent}Eigen::MatrixXd {identifier}({m.rows}, {m.cols});\n"
     rows, cols = m.shape
     for r in range(rows):
@@ -52,7 +54,7 @@ def matrix_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
             code += f"{indent}{identifier}({r}, {c}) = {expr};\n"
     code += f"{indent}return {identifier};\n" + "}"
 
-    return code
+    return code, declaration
 
 
 def to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
@@ -62,23 +64,66 @@ def to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
 
 
 def model_to_cpp(m: Model, indent: str = '\t') -> str:
-    header = "#include <Eigen/Dense>\n#include <math.h>\n"
-    mstr = to_cppfn(m.M, "M", q=m.params, indent=indent)
-    cstr = to_cppfn(m.C, "C", q=m.params, dq=m.diff_params, indent=indent)
-    dstr = to_cppfn(m.D, "D", q=m.params, dq=m.diff_params, indent=indent)
-    gstr = to_cppfn(m.g, "g", q=m.params, indent=indent)
+    header = "#include <Eigen/Dense>\n#include <math.h>\n\n"
+    header += "/*" + Model.__doc__ + "\n"
+    header += f" q = {m.params}\n"
+    header += f"dq = {m.diff_params}\n"
+    header += f" z = {m.inputs}\n"
+    header += "*/\n\n" # end of headerfile comment
+    header += "namespace Model {\n\n"
+    header += f"constexpr int Nn  = {m.M.shape[0]};\n"
+    header += f"constexpr int Nj  = {m.J.shape[0]};\n"
+    header += f"constexpr int Nb  = {m.B.shape[0]};\n"
+    header += f"constexpr int Nm  = {m.u.shape[0]};\n"
+    body = ""
 
-    # include function to get ddq
-    # TODO: include J, Jf, B, u, z
-    ddqfn = """Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq) {\n"""
-    ddqfn += f"{indent}auto mM = M(q);\n"
-    ddqfn += f"{indent}auto mC = C(q, dq);\n"
-    ddqfn += f"{indent}auto mD = D(q, dq);\n"
-    ddqfn += f"{indent}auto mg = g(q);\n"
-    ddqfn += f"{indent}return mM.inverse() * (mg - mC * dq - mD * dq);\n" + "}"
+    mstr, declrm = to_cppfn(m.M, "M", q=m.params, indent=indent)
+    header += declrm + ";\n"
+    body += mstr + "\n"
 
-    code = header + "\n\n" + "namespace Model {" + "\n\n" + mstr + "\n\n" + \
-        cstr + "\n\n" + dstr + "\n\n" + gstr + "\n\n" + ddqfn + "\n\n" + \
-        "} // namespace Model\n"
-    print(code)
+    cstr, declrc = to_cppfn(m.C, "C", q=m.params, dq=m.diff_params, indent=indent)
+    header += declrc + ";\n"
+    body += cstr + "\n"
+
+    dstr, declrd = to_cppfn(m.D, "D", q=m.params, dq=m.diff_params, indent=indent)
+    header += declrd + ";\n"
+    body += dstr + "\n"
+
+    gstr, declrg = to_cppfn(m.g, "g", q=m.params, indent=indent)
+    header += declrg + ";\n"
+    body += gstr + "\n"
+
+    Jstr, declrJ = to_cppfn(m.J, "J", q=m.params, indent=indent)
+    header += declrJ + ";\n"
+    body += Jstr + "\n"
+
+    Jfstr, declrJf = to_cppfn(m.Jf, "Jf", q=m.params, indent=indent)
+    header += declrJf + ";\n"
+    body += Jfstr + "\n"
+
+    Bstr, declrB = to_cppfn(m.B, "B", indent=indent)
+    header += declrB + ";\n"
+    body += Bstr + "\n"
+
+    ustr, declru = to_cppfn(m.u, "u", z=m.inputs, indent=indent)
+    header += declru + ";\n"
+    body += ustr + "\n"
+
+
+    ddqfn = """Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd z) {\n"""
+    ddqfn += f"{indent}Eigen::MatrixXd mM = M(q);\n"
+    ddqfn += f"{indent}Eigen::MatrixXd mC = C(q, dq);\n"
+    ddqfn += f"{indent}Eigen::MatrixXd mD = D(q, dq);\n"
+    ddqfn += f"{indent}Eigen::VectorXd mg = g(q);\n"
+    ddqfn += f"{indent}Eigen::MatrixXd mJf = Jf(q);\n"
+    ddqfn += f"{indent}Eigen::MatrixXd mB = B();\n"
+    ddqfn += f"{indent}Eigen::VectorXd mu = u(z);\n"
+    ddqfn += f"{indent}return mM.inverse() * (mJf * (mB * mu) - mC * dq - mD * dq - mg);\n" + "}"
+    header += "Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd z);\n"
+    body += ddqfn + "\n"
+
+    header += "\n"
+    body += "\n} // namespace Model\n"
+
+    code = header + body
     return code

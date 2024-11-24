@@ -12,6 +12,15 @@ class Model():
     A mathematical model of a robot on the form
         M(q) * ddq + C(q, dq) dq + D(q, dq) dq + g(q) = Jf(q) B u(z)
     z is a specified vector of inputs to the robot.
+
+    M, C and D are n x n matrices
+    J  is a  Nj x Nn  matrix
+    Jf is a  Nn x Nb  matrix
+    B  is a  Nb x Nm  matrix
+    u  is a  Nm x  1  vector
+    
+    The values of nb, nj and m might be hard to calculate before the model is
+    created.
     """
     # TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
 
