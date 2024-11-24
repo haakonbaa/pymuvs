@@ -12,7 +12,7 @@ is designed to deal with
 
 The generated models are on the form
 
-$M(q) \ddot q + C(q, \dot q) \dot q + D(q) \dot q + g(q) = \tau $
+$M(q) \ddot q + C(q, \dot q) \dot q + D(q, \dot q) \dot q + g(q) = J_f(q) B u(z) $
 
 Where the matrices are available as [sympy](https://www.sympy.org/en/index.html) symbolic expressions.
 

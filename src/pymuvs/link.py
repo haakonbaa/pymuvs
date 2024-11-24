@@ -4,60 +4,109 @@ from sympy.matrices import MatrixBase
 from numpy.typing import NDArray
 
 from .se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
-from .util import jacobian as _jacobian, is_symmetric, is_spd
+from .util import jacobian as _jacobian, is_symmetric, is_spd, skew
 
 
 class Model():
     """
     A mathematical model of a robot on the form
-        M(q) * ddq + C(q, dq) dq + D(q, dq) dq + g(q) = tau
+        M(q) * ddq + C(q, dq) dq + D(q, dq) dq + g(q) = Jf(q) B u(z)
+    z is a specified vector of inputs to the robot.
     """
     # TODO: make sure it is C(q, dq) dq and small g(q) everywhere in the code.
 
-    def __init__(self, M: MatrixBase, C: MatrixBase, D: MatrixBase,
-                 g: MatrixBase, J: MatrixBase,
+    def __init__(self,
+                 M: MatrixBase,
+                 C: MatrixBase,
+                 D: MatrixBase,
+                 g: MatrixBase,
+                 J: MatrixBase,
+                 Jf: MatrixBase,
+                 B: MatrixBase,
+                 u: MatrixBase,
                  transforms: list[SE3],
                  params: list[sp.Symbol],
-                 diff_params: list[sp.Symbol]):
+                 diff_params: list[sp.Symbol],
+                 inputs: list[sp.Symbol]):
         assert M.shape[0] == M.shape[1]
         n = M.shape[0]
         assert C.shape == (n, n)
         assert D.shape == (n, n)
         assert g.shape == (n, 1)
         assert J.shape[1] == n
+        assert Jf.shape[0] == n
+        assert Jf.shape[1] == B.shape[0]
+        assert B.shape[1] == u.shape[0]
         self.M = M
         self.C = C
         self.D = D
         self.g = g
         self.J = J
+        self.Jf = Jf
+        self.B = B
+        self.u = u
         self.transforms = transforms
         self.params = params
         self.diff_params = diff_params
+        self.inputs = inputs
 
-    def eval(self, q, dq):
+    def eval(self, q, dq, z=None):
         """
         returns ddq = M^-1 * (tau - C(q, dq) dq - D(q, dq) dq - g(q))
         """
         assert len(q) == len(self.params)
         assert len(dq) == len(self.diff_params)
+        if z is None:
+            z = np.zeros((len(self.inputs),))
+        assert len(z) == len(self.inputs)
         assert isinstance(q, np.ndarray)
         assert isinstance(dq, np.ndarray)
-        
 
         q = q.reshape((-1, 1))
         dq = dq.reshape((-1, 1))
+        z = z.reshape((-1, 1))
 
-        subs_q = {self.params[i]: float(q[i]) for i in range(len(q))}
-        subs_dq = {self.diff_params[i]: float(dq[i]) for i in range(len(dq))}
+        subs_q = {self.params[i]: float(q[i, 0]) for i in range(len(q))}
+        subs_dq = {self.diff_params[i]: float(
+            dq[i, 0]) for i in range(len(dq))}
+        subs_z = {self.inputs[i]: float(z[i, 0]) for i in range(len(z))}
 
         M = np.array(self.M.subs(subs_q), dtype=np.float64)
         M_inv = np.linalg.inv(M)
         C = np.array(self.C.subs(subs_q).subs(subs_dq), dtype=np.float64)
         D = np.array(self.D.subs(subs_q).subs(subs_dq), dtype=np.float64)
         g = np.array(self.g.subs(subs_q), dtype=np.float64)
+        Jf = np.array(self.Jf.subs(subs_q), dtype=np.float64)
+        B = np.array(self.B, dtype=np.float64)
+        u = np.array(self.u.subs(subs_z), dtype=np.float64)
 
-        # TODO: add tau
-        return (M_inv @ ( - C @ dq - D @ dq - g)).flatten()
+        return (M_inv @ (Jf @ B @ u - C @ dq - D @ dq - g)).flatten()
+
+
+class Wrench():
+    """
+    A wrench is a force and a torque acting on a point in space.
+    """
+
+    def __init__(self, position: NDArray[np.float64],
+                 wrench: sp.Matrix):
+        assert isinstance(position, np.ndarray)
+        assert position.shape == (3,)
+
+        assert isinstance(wrench, sp.Matrix)  # TODO: support numpy arrays?
+        assert wrench.shape == (6, 1)
+
+        self.position = position
+        self.wrench = wrench
+
+    def get_force_and_torque(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Returns the force and torque of the wrench.
+        """
+        return self.wrench[0:3, 0], self.wrench[3:, 0]
+
+    def __repr__(self) -> str:
+        return f"Wrench(position={self.position}, wrench={self.wrench})"
 
 
 class Link():
@@ -73,7 +122,8 @@ class Link():
                  linear_damping: NDArray[np.float64],
                  quadratic_damping: NDArray[np.float64],
                  center_of_mass: NDArray[np.float64] = np.zeros((3,)),
-                 center_of_buoyancy: NDArray[np.float64] = np.zeros((3,))
+                 center_of_buoyancy: NDArray[np.float64] = np.zeros((3,)),
+                 wrenches: list[Wrench] = [],
                  ):
         assert type(inertia) == np.ndarray
         assert inertia.shape == (3, 3)
@@ -101,6 +151,7 @@ class Link():
         self.quadratic_damping = quadratic_damping
         self.center_of_mass = center_of_mass
         self.center_of_buoyancy = center_of_buoyancy
+        self.wrenches = wrenches
 
     def __repr__(self) -> str:
         return f"Link(mass={self.mass},\n" \
@@ -109,7 +160,7 @@ class Link():
             f"added_mass={self.added_mass})\n" \
             f"linear_damping={self.linear_damping})\n" \
             f"quadratic_damping={self.quadratic_damping})"
-    
+
     def get_mass_matrix(self) -> NDArray[np.float64]:
         """
         Returns the mass matrix of the link.
@@ -120,14 +171,15 @@ class Link():
         M += self.added_mass
         # Using Fossen eq 3.27 page 60 we shift the spatial inertia matrix
         # to be about the link's coordinate system, not center of mass.
-        # TODO: Verify that this is correct.
+        # TODO: Verify that this is correct. (run some tests)
+        # TODO: cite this in the README
         v = self.center_of_mass
-        S = np.array([[0,-v[2],v[1]],
-                      [v[2],0,-v[0]],
-                      [-v[1],v[0],0]])
+        S = np.array([[0, -v[2], v[1]],
+                      [v[2], 0, -v[0]],
+                      [-v[1], v[0], 0]])
         I = np.eye(3)
         H = np.block([[I, S.T],
-                      [np.zeros((3,3)), I]])
+                      [np.zeros((3, 3)), I]])
 
         return H.T @ M @ H
 
@@ -136,7 +188,8 @@ class Robot():
     def __init__(self, links: list[Link],
                  transforms: list[SE3],
                  params: list[sp.Symbol],
-                 diff_params: list[sp.Symbol]):
+                 diff_params: list[sp.Symbol],
+                 inputs: list[sp.Symbol] = [],):
         """
         A Robot is a collection of links and transformations describing their
         relative positions and orientations.
@@ -148,16 +201,25 @@ class Robot():
         @param diff_variables: A list of sympy symbols representing the differential parameters.
             This list should contain the derivative of each symbol in @param variables.
             and in the same order.
+        @param inputs: A list of sympy symbols representing the inputs to the robot.
+            These are typically the control inputs (like forces and torques).
 
         We denote by q the generalized coordinates (defined by the params list)
         and dq the time derivative of q (q_dot or \dot{q}) if you will).
         """
+        # TODO: make these checks more complete / informative.
         assert len(links) == len(transforms)
         assert len(params) == len(diff_params)
         for var in params:
             assert isinstance(var, sp.Symbol)
         for diff_var in diff_params:
             assert isinstance(diff_var, sp.Symbol)
+        for inp in inputs:
+            assert isinstance(inp, sp.Symbol)
+        for link in links:
+            assert isinstance(link, Link)
+            for wrench in link.wrenches:
+                assert wrench.wrench.free_symbols.issubset(set(inputs))
 
         # Make sure all parameters used in the transforms are present in the
         # params list.
@@ -190,6 +252,7 @@ class Robot():
         self._diff_params = diff_params
         self._q = sp.Matrix(params)
         self._dq = sp.Matrix(diff_params)
+        self._inputs = inputs
 
     def get_dof(self) -> int:
         """
@@ -211,7 +274,7 @@ class Robot():
         """
         Returns the robot model as a Model object. The model object represents
         a mathematical model on the form
-            M(q) ddq + C(q, dq) dq + D(q, dq) dq + g(q) = tau
+            M(q) ddq + C(q, dq) dq + D(q, dq) dq + g(q) = Jf(q) B u(z)
 
         @param gvec: The gravity vector acting on the robot. Normal value is
             [0, 0, -9.81] m/s^2. This vector is multiplied by the mass to get
@@ -292,7 +355,6 @@ class Robot():
         print('Coreolis matrix')
         C = sp.zeros(self.get_dof(), self.get_dof())
         C += J.T * M * Jd + Jd.T * M * J  # TODO: verify this is correct
-
         ugly = J.T * M * J * self._dq
         C -= 0.5 * _jacobian(ugly, self._q).T
         if simplify:
@@ -318,13 +380,65 @@ class Robot():
                 g[i] += _jacobian(pos_g, qi).T @ gvec * link.mass
                 g[i] += _jacobian(pos_b, qi).T @ bvec * link.volume
 
+        # move to the other side of the equation
         g = - g
         if simplify:
             g = sp.simplify(g)
 
-        # TODO: turn back simplify
+        # Forces and torques
+        # = Jf(q) B u(z)    (z is vector of inputs)
+        Bu = sp.zeros(self.get_link_count()*6, 1)
+        Jf = J.T
+        for link_num, link in enumerate(self._links):
+            for wrench in link.wrenches:
+                force, torque = wrench.get_force_and_torque()
+                torque_co = torque + skew(wrench.position) @ force
+                Bu[6*link_num:6*link_num+3, 0] += force
+                Bu[6*link_num+3:6*link_num+6, 0] += torque_co
 
-        return Model(Ma, C, D, g, J, self._transforms, self._params, self._diff_params)
+        B, u = _Bu_to_B_and_u(Bu)
+
+        return Model(Ma, C, D, g, J, Jf, B, u,
+                     self._transforms, self._params, self._diff_params,
+                     self._inputs)
+
+
+def _Bu_to_B_and_u(M: sp.Matrix):
+    # collapse the matrix into a column vector, if it is not already
+    K = sp.zeros(M.shape[0], 1)
+    for r in range(M.shape[0]):
+        for c in range(M.shape[1]):
+            K[r] += M[r, c]
+
+    u = []
+    index_of_factor = {}
+    cflistlist = []
+    for r in range(K.shape[0]):
+        # A list of pairs of (coefficient, factor)'s. i.e [(4, force_1), ...]
+        # for each row in K.
+        cflist = []
+        addends = K[r].as_ordered_terms()
+        for addend in addends:
+            coeff, factors = addend.as_coeff_mul()
+            if coeff != 0:
+                cflist.append((coeff, sp.Mul(*factors)))
+        cflistlist.append(cflist)
+
+        # Kepp track of the factors and their indices, this will be used to
+        # construct u and the B matrix.
+        for coeff, factor in cflist:
+            if (factor not in u):
+                u.append(factor)
+                index_of_factor[factor] = len(u) - 1
+
+    if len(u) == 0:
+        return sp.zeros(K.shape[0], 1), sp.zeros(1, 1)
+
+    B = sp.zeros(K.shape[0], len(u))
+    for r, cflist in enumerate(cflistlist):
+        for coeff, factor in cflist:
+            B[r, index_of_factor[factor]] = coeff
+    return B, sp.Matrix(u)
 
 
 def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:

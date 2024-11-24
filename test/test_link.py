@@ -5,7 +5,7 @@ import numpy as np
 from src.pymuvs.util import jacobian
 from src.pymuvs.se3 import rot_x, trans
 from src.pymuvs import Link, Model, Robot
-from src.pymuvs.link import _time_diff_matrix
+from src.pymuvs.link import _time_diff_matrix, _Bu_to_B_and_u
 
 
 class TestLink(unittest.TestCase):
@@ -143,3 +143,34 @@ class TestSystem(unittest.TestCase):
         print(f"{model.D=}")
         print(f"{model.g=}")
         print(f"{model.J=}")
+
+
+class TestPrivateFunctions(unittest.TestCase):
+
+    def test_Bu_to_B_and_u(self):
+        """
+        test the function Bu_to_B_and_u
+        """
+        x, y, z = sp.symbols('x y z')
+        Bu = sp.Matrix([[x], [y], [z]])
+        B, u = _Bu_to_B_and_u(Bu)
+        self.assertEqual(B, sp.eye(3))
+        self.assertEqual(u, sp.Matrix([[x], [y], [z]]))
+
+        Bu = sp.Matrix([x + y, x - y, z])
+        B, u = _Bu_to_B_and_u(Bu)
+        self.assertEqual(Bu, B @ u)
+        self.assertEqual(B.free_symbols, set())
+        self.assertEqual(u.shape, (3, 1))
+
+        Bu = sp.Matrix([x + y + 1, x - y, z])
+        B, u = _Bu_to_B_and_u(Bu)
+        self.assertEqual(Bu, B @ u)
+        self.assertEqual(B.free_symbols, set())
+        self.assertEqual(u.shape, (4, 1))
+
+        Bu = sp.zeros(3, 1)
+        B, u = _Bu_to_B_and_u(Bu)
+        print(f"{Bu=}")
+        print(f"{B=}")
+        print(f"{u=}")

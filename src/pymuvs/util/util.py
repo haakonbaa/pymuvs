@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 import sympy as sp
 from sympy.matrices import MatrixBase
 
+
 def is_symmetric(matrix: NDArray, atol: float = 1e-8) -> bool:
     """
     Check if a matrix is symmetric within a given tolerance.
@@ -53,3 +54,14 @@ def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
         J[i, :] = x[i].diff(q).T
 
     return J
+
+
+def skew(x: Union[NDArray, MatrixBase]) -> Union[NDArray, MatrixBase]:
+    if isinstance(x, sp.Matrix):
+        return sp.Matrix([[0, -x[2], x[1]],
+                          [x[2], 0, -x[0]],
+                          [-x[1], x[0], 0]])
+    if isinstance(x, np.ndarray):
+        return np.array([[0, -x[2], x[1]],
+                         [x[2], 0, -x[0]],
+                         [-x[1], x[0], 0]])
