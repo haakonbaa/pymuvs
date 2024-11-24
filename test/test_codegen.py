@@ -23,6 +23,7 @@ class TestCodeGen(unittest.TestCase):
             wrench=sp.Matrix([0, -f2, 0, 0, 0, 0]),
         )
         tau1 = sp.symbols('τ1', real=True)
+        tau2 = sp.symbols('τ2', real=True)
 
         # l1 is a sphere in three dimensions
         l1 = Link(mass=1,
@@ -52,14 +53,19 @@ class TestCodeGen(unittest.TestCase):
             transforms=[Tbn],
             params=q,
             diff_params=dq,
-            inputs=[f1, f2],
+            inputs=[f1, f2, tau1],
         )
 
         model = sphere.get_model(simplify=False,
                                  gvec=np.array([0, 0, -9.81]),
                                  bvec=np.array([0, 0, 9.81]),
-                                 #generalized_forces={theta: tau1},
+                                 generalized_forces={phi: tau1},
                                  )
+
+        print(f"{model.Jf=}")
+        print(f"{model.B=}")
+        print(f"{model.Jf @ model.B @ model.u = }")
+        print(f"{model.u=}")
 
         code = model_to_cpp(model)
         with open('model.h', 'w') as f:

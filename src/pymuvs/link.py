@@ -2,6 +2,7 @@ import numpy as np
 import sympy as sp
 from sympy.matrices import MatrixBase
 from numpy.typing import NDArray
+from typing import Dict, Union
 
 from .se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
 from .util import jacobian as _jacobian, is_symmetric, is_spd, skew
@@ -18,7 +19,7 @@ class Model():
     Jf is a  Nn x Nb  matrix
     B  is a  Nb x Nm  matrix
     u  is a  Nm x  1  vector
-    
+
     The values of nb, nj and m might be hard to calculate before the model is
     created.
     """
@@ -33,10 +34,14 @@ class Model():
                  Jf: MatrixBase,
                  B: MatrixBase,
                  u: MatrixBase,
+                 Ju: MatrixBase,  # parital u / parial z
                  transforms: list[SE3],
                  params: list[sp.Symbol],
                  diff_params: list[sp.Symbol],
-                 inputs: list[sp.Symbol]):
+                 inputs: list[sp.Symbol],
+                 u_to_z: Union[MatrixBase, None] = None,
+                 uvars: list[sp.Symbol] = []
+                 ):
         assert M.shape[0] == M.shape[1]
         n = M.shape[0]
         assert C.shape == (n, n)
@@ -46,7 +51,10 @@ class Model():
         assert Jf.shape[0] == n
         assert Jf.shape[1] == B.shape[0]
         assert B.shape[1] == u.shape[0]
-        self.M = M
+        assert u_to_z is None or u_to_z.shape == sp.Matrix(inputs).shape
+        if u_to_z is not None:
+            assert u_to_z.free_symbols.issubset(set(uvars))
+        self.M = M  # Mass matrix
         self.C = C
         self.D = D
         self.g = g
@@ -54,6 +62,9 @@ class Model():
         self.Jf = Jf
         self.B = B
         self.u = u
+        self.Ju = Ju  # Testitest
+        self.u_to_z = u_to_z
+        self.uvars = uvars
         self.transforms = transforms
         self.params = params
         self.diff_params = diff_params
@@ -261,7 +272,7 @@ class Robot():
         self._diff_params = diff_params
         self._q = sp.Matrix(params)
         self._dq = sp.Matrix(diff_params)
-        self._inputs = inputs
+        self._inputs = inputs  # TODO: make this consistent!
 
     def get_dof(self) -> int:
         """
@@ -278,7 +289,8 @@ class Robot():
 
     def get_model(self, gvec: NDArray[np.float64] = np.array([0, 0, -9.81]),
                   bvec: NDArray[np.float64] = np.array([0, 0, 0]),
-                  simplify: bool = True
+                  simplify: bool = True,
+                  generalized_forces: Dict[sp.Symbol, sp.Expr] = {},
                   ) -> None:
         """
         Returns the robot model as a Model object. The model object represents
@@ -300,12 +312,20 @@ class Robot():
 
         # The potential enegy is compensated for by modelling graviy and buoyancy
         # as forces acting on the links instead of potential energy.
-        # TODO:
-        # - [ ] add possibility for external forces and torques
 
-        if isinstance(gvec, np.ndarray):
-            assert gvec.size == 3
-            gvec.reshape((3, 1))
+        assert isinstance(gvec, np.ndarray)
+        assert gvec.size == 3
+        gvec.reshape((3, 1))
+        assert isinstance(bvec, np.ndarray)
+        assert bvec.size == 3
+        bvec.reshape((3, 1))
+        assert isinstance(simplify, bool)
+        assert isinstance(generalized_forces, dict)
+        for key, val in generalized_forces.items():
+            assert isinstance(key, sp.Symbol)
+            assert isinstance(val, sp.Expr)
+            assert key in self._params
+            assert val.free_symbols.issubset(set(self._inputs))
 
         # stack the jacobian matrices
         print('jacobian')
@@ -405,11 +425,30 @@ class Robot():
                 Bu[6*link_num:6*link_num+3, 0] += force
                 Bu[6*link_num+3:6*link_num+6, 0] += torque_co
 
+        for param, force in generalized_forces.items():
+            Jfadd = sp.zeros(Jf.shape[1], 1)
+            Jfadd[self._params.index(param), 0] = 1
+            Jf = sp.Matrix([[Jf, Jfadd]])
+            Bu = sp.Matrix([[Bu], [force]])
+
         B, u = _Bu_to_B_and_u(Bu)
 
-        return Model(Ma, C, D, g, J, Jf, B, u,
+        if len(self._inputs) == 0:
+            Ju = sp.zeros(1, 1)
+        else:
+            Ju = _jacobian(u, sp.Matrix(self._inputs))
+
+        u_to_z = None
+        uvars = sp.symbols(f'input_0:{u.shape[0]}')
+        sol = sp.solve([u[i] - uvars[i] for i in range(u.shape[0])],
+                       self._inputs, dict=True, quick=True)
+        if len(sol) > 0:
+            u_to_z = sp.Matrix(uvars).subs(sol[0])
+            print('u_to_z', u_to_z)
+
+        return Model(Ma, C, D, g, J, Jf, B, u, Ju,
                      self._transforms, self._params, self._diff_params,
-                     self._inputs)
+                     self._inputs, u_to_z=u_to_z, uvars=uvars)
 
 
 def _Bu_to_B_and_u(M: sp.Matrix):

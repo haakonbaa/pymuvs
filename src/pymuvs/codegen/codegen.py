@@ -14,7 +14,8 @@ def vector_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
         identifier += str(np.random.randint(0, 9))
 
     declaration = f"Eigen::VectorXd {name}("
-    declaration += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+    declaration += ", ".join(
+        [f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
     declaration += ")"
     code = declaration + " {\n"
     for vname, vlist in kwargs.items():
@@ -40,7 +41,8 @@ def matrix_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
         identifier += str(np.random.randint(0, 9))
 
     declaration = f"Eigen::MatrixXd {name}("
-    declaration += ", ".join([f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+    declaration += ", ".join(
+        [f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
     declaration += ")"
     code = declaration + " {\n"
     for vname, vlist in kwargs.items():
@@ -64,28 +66,31 @@ def to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
 
 
 def model_to_cpp(m: Model, indent: str = '\t') -> str:
-    header = "#include <Eigen/Dense>\n#include <math.h>\n\n"
+    header = "#include <Eigen/Dense>\n#include <math.h>\n#include <stdexcept>\n\n"
     header += "/*" + Model.__doc__ + "\n"
     header += f" q = {m.params}\n"
     header += f"dq = {m.diff_params}\n"
     header += f" z = {m.inputs}\n"
-    header += "*/\n\n" # end of headerfile comment
+    header += "*/\n\n"  # end of headerfile comment
     header += "namespace Model {\n\n"
     header += f"constexpr int Nn  = {m.M.shape[0]};\n"
     header += f"constexpr int Nj  = {m.J.shape[0]};\n"
     header += f"constexpr int Nb  = {m.B.shape[0]};\n"
     header += f"constexpr int Nm  = {m.u.shape[0]};\n"
+    header += f"constexpr int Nz  = {len(m.inputs)};\n"
     body = ""
 
     mstr, declrm = to_cppfn(m.M, "M", q=m.params, indent=indent)
     header += declrm + ";\n"
     body += mstr + "\n"
 
-    cstr, declrc = to_cppfn(m.C, "C", q=m.params, dq=m.diff_params, indent=indent)
+    cstr, declrc = to_cppfn(m.C, "C", q=m.params,
+                            dq=m.diff_params, indent=indent)
     header += declrc + ";\n"
     body += cstr + "\n"
 
-    dstr, declrd = to_cppfn(m.D, "D", q=m.params, dq=m.diff_params, indent=indent)
+    dstr, declrd = to_cppfn(m.D, "D", q=m.params,
+                            dq=m.diff_params, indent=indent)
     header += declrd + ";\n"
     body += dstr + "\n"
 
@@ -109,6 +114,9 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += declru + ";\n"
     body += ustr + "\n"
 
+    Justr, declrJu = to_cppfn(m.Ju, "Ju", z=m.inputs, indent=indent)
+    header += declrJu + ";\n"
+    body += Justr + "\n"
 
     ddqfn = """Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd z) {\n"""
     ddqfn += f"{indent}Eigen::MatrixXd mM = M(q);\n"
@@ -122,7 +130,20 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += "Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd z);\n"
     body += ddqfn + "\n"
 
-    header += "\n"
+    # u_to_z function
+    if m.u_to_z is None:
+        u_to_z = "Eigen::VectorXd u_to_z(Eigen::VectorXd u) {\n"
+        u_to_z += f'{indent}throw std::runtime_error("Error: u_to_z not implemented");\n'
+        u_to_z += f"{indent}return" + " Eigen::VectorXd();\n" + "}"
+        header += "Eigen::VectorXd u_to_z(Eigen::VectorXd u);"
+        body += u_to_z + "\n"
+    else:
+        u_to_z, declrutoz = to_cppfn(
+            m.u_to_z, "u_to_z", u=m.uvars, indent=indent)
+        header += declrutoz + ";\n"
+        body += u_to_z + "\n"
+
+    header += "\n\n"
     body += "\n} // namespace Model\n"
 
     code = header + body
