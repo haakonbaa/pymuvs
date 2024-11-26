@@ -1,10 +1,14 @@
+
 import numpy as np
 from numpy.typing import NDArray
+from deprecated import deprecated
 
 from .link import Link
 from .se3 import SE3
 
 class RobotV2():
+
+    @deprecated
     def __init__(self, link : Link, transform : SE3):
         # each link has a unique id
         self._link_to_id = {link: 0}

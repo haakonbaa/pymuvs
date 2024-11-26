@@ -71,6 +71,8 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += f" q = {m.params}\n"
     header += f"dq = {m.diff_params}\n"
     header += f" z = {m.inputs}\n"
+    uvec = [m.u[i,0] for i in range(m.u.shape[0])]
+    header += f" u = {uvec}\n"
     header += "*/\n\n"  # end of headerfile comment
     header += "namespace Model {\n\n"
     header += f"constexpr int Nn  = {m.M.shape[0]};\n"
@@ -146,5 +148,12 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += "\n\n"
     body += "\n} // namespace Model\n"
 
-    code = header + body
-    return code
+    print(f"{header=}")
+    print(f"\n\n\n\n\n")
+    print(f"{body=}")
+
+    headerfile = header + "} // namespace Model\n"
+    cppfile = r'#include "model.h"' + "\n\n"
+    cppfile += "namespace Model { // namespace Model\n" + body + "\n"
+
+    return header + body, headerfile, cppfile

@@ -426,7 +426,7 @@ class Robot():
                 Bu[6*link_num+3:6*link_num+6, 0] += torque_co
 
         for param, force in generalized_forces.items():
-            Jfadd = sp.zeros(Jf.shape[1], 1)
+            Jfadd = sp.zeros(Jf.shape[0], 1)
             Jfadd[self._params.index(param), 0] = 1
             Jf = sp.Matrix([[Jf, Jfadd]])
             Bu = sp.Matrix([[Bu], [force]])
@@ -438,18 +438,23 @@ class Robot():
         else:
             Ju = _jacobian(u, sp.Matrix(self._inputs))
 
-        u_to_z = None
-        uvars = sp.symbols(f'input_0:{u.shape[0]}')
-        sol = sp.solve([u[i] - uvars[i] for i in range(u.shape[0])],
-                       self._inputs, dict=True, quick=True)
-        if len(sol) > 0:
-            u_to_z = sp.Matrix(uvars).subs(sol[0])
-            print('u_to_z', u_to_z)
+        u_to_z, uvars = _inv_func(u, self._inputs)
 
         return Model(Ma, C, D, g, J, Jf, B, u, Ju,
                      self._transforms, self._params, self._diff_params,
                      self._inputs, u_to_z=u_to_z, uvars=uvars)
 
+def _inv_func(f : sp.Matrix, x : list[sp.Symbol]):
+    assert f.shape[1] == 1
+    assert f.shape[0] > 0
+    nvars = f.shape[0]
+
+    ys = sp.symbols(f"y_0:{nvars}", real=True)
+    sol = sp.solve([f[i, 0] - ys[i] for i in range(nvars)], x, dict=True)
+    if len(sol) == 0:
+        return None, ys
+    xsol = sp.Matrix(x).subs(sol[0])
+    return xsol, ys
 
 def _Bu_to_B_and_u(M: sp.Matrix):
     # collapse the matrix into a column vector, if it is not already

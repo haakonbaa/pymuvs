@@ -62,11 +62,9 @@ class TestCodeGen(unittest.TestCase):
                                  generalized_forces={phi: tau1},
                                  )
 
-        print(f"{model.Jf=}")
-        print(f"{model.B=}")
-        print(f"{model.Jf @ model.B @ model.u = }")
-        print(f"{model.u=}")
+        code, header, body = model_to_cpp(model)
+        with open('model.cpp', 'w') as f:
+            f.write(body)
 
-        code = model_to_cpp(model)
         with open('model.h', 'w') as f:
-            f.write(code)
+            f.write(header)

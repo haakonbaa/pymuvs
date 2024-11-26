@@ -5,7 +5,7 @@ import numpy as np
 from src.pymuvs.util import jacobian
 from src.pymuvs.se3 import rot_x, trans
 from src.pymuvs import Link, Model, Robot
-from src.pymuvs.link import _time_diff_matrix, _Bu_to_B_and_u
+from src.pymuvs.link import _time_diff_matrix, _Bu_to_B_and_u, _inv_func
 
 
 class TestLink(unittest.TestCase):
@@ -174,3 +174,14 @@ class TestPrivateFunctions(unittest.TestCase):
         print(f"{Bu=}")
         print(f"{B=}")
         print(f"{u=}")
+
+    def test_inv_func(self):
+        x1, x2 = sp.symbols('x1 x2')
+        xs = [x1, x2]
+        f = sp.Matrix([x1 + x2, x1 - x2])
+
+        finv, ys = _inv_func(f, [x1, x2])
+        tmp = finv.subs({ys[0] : f[0,0], ys[1] : f[1,0]})
+        self.assertEqual(tmp, sp.Matrix([x1, x2]))
+        
+
