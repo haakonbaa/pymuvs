@@ -444,7 +444,8 @@ class Robot():
                      self._transforms, self._params, self._diff_params,
                      self._inputs, u_to_z=u_to_z, uvars=uvars)
 
-def _inv_func(f : sp.Matrix, x : list[sp.Symbol]):
+
+def _inv_func(f: sp.Matrix, x: list[sp.Symbol]):
     assert f.shape[1] == 1
     assert f.shape[0] > 0
     nvars = f.shape[0]
@@ -455,6 +456,7 @@ def _inv_func(f : sp.Matrix, x : list[sp.Symbol]):
         return None, ys
     xsol = sp.Matrix(x).subs(sol[0])
     return xsol, ys
+
 
 def _Bu_to_B_and_u(M: sp.Matrix):
     # collapse the matrix into a column vector, if it is not already
@@ -472,9 +474,9 @@ def _Bu_to_B_and_u(M: sp.Matrix):
         cflist = []
         addends = K[r].as_ordered_terms()
         for addend in addends:
-            coeff, factors = addend.as_coeff_mul()
+            coeff, factor = addend.as_coeff_Mul()
             if coeff != 0:
-                cflist.append((coeff, sp.Mul(*factors)))
+                cflist.append((coeff, factor))
         cflistlist.append(cflist)
 
         # Kepp track of the factors and their indices, this will be used to

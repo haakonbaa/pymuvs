@@ -152,6 +152,14 @@ class TestPrivateFunctions(unittest.TestCase):
         test the function Bu_to_B_and_u
         """
         x, y, z = sp.symbols('x y z')
+
+        Bu = sp.Matrix([0.34*x, 0.5*x, x, 4*x])
+        B, u = _Bu_to_B_and_u(Bu)
+        self.assertEqual(Bu, B @ u)
+        self.assertEqual(B.free_symbols, set())
+        self.assertEqual(B.shape, (4, 1))
+        self.assertEqual(u.shape, (1, 1))
+
         Bu = sp.Matrix([[x], [y], [z]])
         B, u = _Bu_to_B_and_u(Bu)
         self.assertEqual(B, sp.eye(3))
@@ -169,19 +177,11 @@ class TestPrivateFunctions(unittest.TestCase):
         self.assertEqual(B.free_symbols, set())
         self.assertEqual(u.shape, (4, 1))
 
-        Bu = sp.zeros(3, 1)
-        B, u = _Bu_to_B_and_u(Bu)
-        print(f"{Bu=}")
-        print(f"{B=}")
-        print(f"{u=}")
-
     def test_inv_func(self):
         x1, x2 = sp.symbols('x1 x2')
         xs = [x1, x2]
         f = sp.Matrix([x1 + x2, x1 - x2])
 
         finv, ys = _inv_func(f, [x1, x2])
-        tmp = finv.subs({ys[0] : f[0,0], ys[1] : f[1,0]})
+        tmp = finv.subs({ys[0]: f[0, 0], ys[1]: f[1, 0]})
         self.assertEqual(tmp, sp.Matrix([x1, x2]))
-        
-
