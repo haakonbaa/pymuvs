@@ -6,10 +6,11 @@ from deprecated import deprecated
 from .link import Link
 from .se3 import SE3
 
+
 class RobotV2():
 
     @deprecated
-    def __init__(self, link : Link, transform : SE3):
+    def __init__(self, link: Link, transform: SE3):
         # each link has a unique id
         self._link_to_id = {link: 0}
         self._parent = {0: None}
@@ -17,7 +18,7 @@ class RobotV2():
         self._links = [link]
         self._transforms = [transform]
 
-    def attach(self, link : Link, transform : SE3, parent : Link):
+    def attach(self, link: Link, transform: SE3, parent: Link):
         link_id = len(self._links)
         self._links.append(link)
         self._transforms.append(transform)
@@ -34,8 +35,8 @@ class RobotV2():
     def get_num_links(self) -> int:
         return len(self._links)
 
-    def get_parent_id(self, link : Link) -> int:
+    def get_parent_id(self, link: Link) -> int:
         return self._parent[self._link_to_id[link]]
 
-    def link_to_id(self, link : Link) -> int:
+    def link_to_id(self, link: Link) -> int:
         return self._link_to_id[link]

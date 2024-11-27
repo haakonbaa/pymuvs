@@ -71,7 +71,7 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += f" q = {m.params}\n"
     header += f"dq = {m.diff_params}\n"
     header += f" z = {m.inputs}\n"
-    uvec = [m.u[i,0] for i in range(m.u.shape[0])]
+    uvec = [m.u[i, 0] for i in range(m.u.shape[0])]
     header += f" u = {uvec}\n"
     header += "*/\n\n"  # end of headerfile comment
     header += "namespace Model {\n\n"
