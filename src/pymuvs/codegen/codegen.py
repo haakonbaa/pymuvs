@@ -79,7 +79,8 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     header += f"constexpr int Nj  = {m.J.shape[0]};\n"
     header += f"constexpr int Nb  = {m.B.shape[0]};\n"
     header += f"constexpr int Nm  = {m.u.shape[0]};\n"
-    header += f"constexpr int Nz  = {len(m.inputs)};\n"
+    header += f"constexpr int Nz  = {len(m.inputs)}; // number of inputs\n"
+    header += f"constexpr int Nt  = {len(m.transforms)}; // number of transforms\n\n"
     body = ""
 
     mstr, declrm = to_cppfn(m.M, "M", q=m.params, indent=indent)
@@ -119,6 +120,15 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     Justr, declrJu = to_cppfn(m.Ju, "Ju", z=m.inputs, indent=indent)
     header += declrJu + ";\n"
     body += Justr + "\n"
+
+    for i, transform in enumerate(m.transforms):
+        x, y, z = sp.symbols('x y z')
+        tfn = transform.apply(sp.Matrix([x, y, z]))
+        kwargs = {f"x_{i}":[x, y, z]}
+        fistr, declrfi = to_cppfn(tfn, f"T{i}_to_b", q=m.params, **kwargs, indent=indent)
+        header += declrfi + ";\n"
+        body += fistr + "\n"
+
 
     ddqfn = """Eigen::VectorXd ddq(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd z) {\n"""
     ddqfn += f"{indent}Eigen::MatrixXd mM = M(q);\n"

@@ -40,6 +40,8 @@ def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
     parameters q.
     """
 
+    assert isinstance(x, sp.MatrixBase)
+    assert isinstance(q, sp.MatrixBase) # TODO: list of symbols ok?
     assert ((x.shape[0] == 1) or (x.shape[1] == 1))
     assert q.shape[1] == 1
 
@@ -54,6 +56,20 @@ def jacobian(x: MatrixBase, q: MatrixBase) -> MatrixBase:
         J[i, :] = x[i].diff(q).T
 
     return J
+
+def time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
+    """
+    Compute the time derivative of a matrix A. A is a function of q, and the
+    time derivatives of q are given by dq.
+    """
+    assert len(q) == len(dq)
+
+    Ad = sp.zeros(A.shape[0], A.shape[1])
+    for r in range(A.shape[0]):
+        for c in range(A.shape[1]):
+            Ad[r, c] = A[r, c].diff(sp.Matrix(q)).T @ sp.Matrix(dq)
+
+    return Ad
 
 
 def skew(x: Union[NDArray, MatrixBase]) -> Union[NDArray, MatrixBase]:

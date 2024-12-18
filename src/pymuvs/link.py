@@ -3,6 +3,7 @@ import sympy as sp
 from sympy.matrices import MatrixBase
 from numpy.typing import NDArray
 from typing import Dict, Union
+from deprecated import deprecated
 
 from .se3 import SE3, rotmat_to_angvel_matrix_frameb, trans, set_simplify
 from .util import jacobian as _jacobian, is_symmetric, is_spd, skew
@@ -496,6 +497,8 @@ def _Bu_to_B_and_u(M: sp.Matrix):
     return B, sp.Matrix(u)
 
 
+# TODO: move this to util.py
+@deprecated
 def _time_diff_matrix(A: MatrixBase, q: list[sp.Symbol], dq: list[sp.Symbol]) -> MatrixBase:
     """
     Compute the time derivative of a matrix A. A is a function of q, and the
