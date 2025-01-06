@@ -2,23 +2,45 @@ import sympy as sp
 import numpy as np
 
 from ..link import Model
+from ..tp import Task, TaskDesired
 
 
 def vector_to_cppfn(m: sp.Matrix, name: str, indent: str = '\t', **kwargs):
-    variables = {v for varlist in kwargs.values() for v in varlist}
+    variables = set()
+    for varlist in kwargs.values():
+        if isinstance(varlist, list):
+            variables.update(varlist)
+        elif isinstance(varlist, sp.Symbol):
+            variables.add(varlist)
+        else:
+            raise ValueError("kwargs must be a dictionary of lists of symbols")
+    #variables = {v for varlist in kwargs.values() for v in varlist}
     assert m.free_symbols.issubset(
-        variables), "All free symbols in the matrix must be in the variables list"
+        variables), "All free symbols in the matrix must be in the variables list" + \
+        f". {m.free_symbols} not in {variables}"
 
     identifier = "m"
     while identifier in variables or identifier == name:
         identifier += str(np.random.randint(0, 9))
 
     declaration = f"Eigen::VectorXd {name}("
-    declaration += ", ".join(
-        [f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+    for i, (vname, vlist) in enumerate(kwargs.items()):
+        if i > 0:
+            declaration += ", "
+        if isinstance(vlist, sp.Symbol):
+            declaration += f"double {vlist}_in"
+        else:
+            declaration += f"Eigen::VectorXd {vname}"
+
+    #declaration += ", ".join(
+    #    [f"Eigen::VectorXd {vname}" for vname in kwargs.keys()])
+
     declaration += ")"
     code = declaration + " {\n"
     for vname, vlist in kwargs.items():
+        if isinstance(vlist, sp.Symbol):
+            code += f"{indent}double {vlist} = {vname}_in;\n"
+            continue
         for i, v in enumerate(vlist):
             code += f"{indent}double {v} = {vname}({i});\n"
     code += f"{indent}Eigen::VectorXd {identifier}({m.rows}, {m.cols});\n"
@@ -167,3 +189,112 @@ def model_to_cpp(m: Model, indent: str = '\t') -> str:
     cppfile += "namespace Model { // namespace Model\n" + body + "\n"
 
     return header + body, headerfile, cppfile
+
+def tasks_to_cpp(task_list : list[Task|TaskDesired],
+                 t : sp.Symbol,
+                 q : list[sp.Symbol],
+                 dq : list[sp.Symbol],
+                 indent : str = '\t') -> tuple[str, str]:
+    """
+    returns header-file and cpp-file with the C++ implementation of the tasks
+    """
+    assert isinstance(task_list, list)
+    assert isinstance(t, sp.Symbol)
+    assert isinstance(q, list)
+    assert isinstance(dq, list)
+    assert len(q) == len(dq)
+    assert all(isinstance(qi, sp.Symbol) for qi in q)
+    assert all(isinstance(dqi, sp.Symbol) for dqi in dq)
+
+    tasks = []
+    tasks_desired = []
+    names = set()
+    for task in task_list:
+        assert isinstance(task, Task) or isinstance(task, TaskDesired)
+        if isinstance(task, Task):
+            tasks.append(task)
+            assert task.f.free_symbols.issubset(set(q))
+            if t.name in names:
+                raise ValueError(f"Task name '{task.name}' is not unique")
+            names.add(task.name)
+        elif isinstance(task, TaskDesired):
+            tasks_desired.append(task)
+            assert task.sigma.free_symbols.issubset(set([t]))
+            if task.name in names:
+                raise ValueError(f"TaskDesired name '{task.name}' is not unique")
+            names.add(task.name)
+
+    header = r"""#include <iostream>
+#include <Eigen/Dense>
+
+struct Task {
+    Task(std::function<Eigen::VectorXd(Eigen::VectorXd)> f,
+            std::function<Eigen::MatrixXd(Eigen::VectorXd)> J,
+            std::function<Eigen::MatrixXd(Eigen::VectorXd, Eigen::VectorXd)> dJ
+            ) : f(f), J(J), dJ(dJ) {}
+
+    std::function<Eigen::VectorXd(Eigen::VectorXd)> f;
+    std::function<Eigen::MatrixXd(Eigen::VectorXd)> J;
+    std::function<Eigen::MatrixXd(Eigen::VectorXd,Eigen::VectorXd)> dJ;
+
+    Eigen::VectorXd velocity(Eigen::VectorXd q, Eigen::VectorXd dq) const {
+        return J(q) * dq;
+    }
+
+    Eigen::VectorXd acceleration(Eigen::VectorXd q, Eigen::VectorXd dq, Eigen::VectorXd ddq) const {
+        return dJ(q, dq) * dq + J(q) * ddq;
+    }
+};
+
+struct TaskDesired {
+    TaskDesired(std::function<Eigen::VectorXd(double)> sigma,
+                std::function<Eigen::VectorXd(double)> dsigma,
+                std::function<Eigen::VectorXd(double)> ddsigma
+    ) : sigma(sigma), dsigma(dsigma), ddsigma(ddsigma) {}
+    std::function<Eigen::VectorXd(double)> sigma;
+    std::function<Eigen::VectorXd(double)> dsigma;
+    std::function<Eigen::VectorXd(double)> ddsigma;
+};""" + "\n\n"
+    for task in tasks:
+        header += f"extern const Task {task.name};\n"
+    for task in tasks_desired:
+        header += f"extern const TaskDesired {task.name};\n"
+
+    cpp = '''#include "tasks.h"\n\n
+// static task definitions\n'''
+    footer = "// task definitions\n"
+    for task in tasks:
+        fstr, declrf = to_cppfn(task.f, f"f_{task.name}", q=q, indent=indent)
+        fstr = r"static " + fstr
+        cpp += fstr + "\n"
+
+        Jstr, declrJ = to_cppfn(task.J, f"J_{task.name}", q=q, indent=indent)
+        Jstr = r"static " + Jstr
+        cpp += Jstr + "\n"
+
+        dJstr, declrdJ = to_cppfn(task.dJ, f"dJ_{task.name}", q=q, dq=dq, indent=indent)
+        dJstr = r"static " + dJstr
+        cpp += dJstr + "\n"
+
+        footer += f"const Task {task.name}(f_{task.name}, J_{task.name}, dJ_{task.name});\n"
+
+    for task in tasks_desired:
+        sstr, declrs = to_cppfn(task.sigma, f"sigma_{task.name}", t=t, indent=indent)
+        sstr = r"static " + sstr
+        cpp += sstr + "\n"
+
+        spstr, declrsp = to_cppfn(task.dsigma, f"dsigma_{task.name}", t=t, indent=indent)
+        spstr = r"static " + spstr
+        cpp += spstr + "\n"
+
+        sdpstr, declrsdp = to_cppfn(task.ddsigma, f"ddsigma_{task.name}", t=t, indent=indent)
+        sdpstr = r"static " + sdpstr
+        cpp += sdpstr + "\n"
+
+        footer += f"const TaskDesired {task.name}(sigma_{task.name}, dsigma_{task.name}, ddsigma_{task.name});\n"
+
+
+    return header, cpp + footer
+            
+
+
